@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Painel Admin - Barbearia</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("barber_theme");
+        if (!t) t = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) { document.documentElement.setAttribute("data-theme", "light"); }
+    })();
+  </script>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <img class="brand-logo" src="/logo.svg" alt="Ziah Cortes" />
+    </a>
+    <div class="actions">
+      <button class="btn btn-ghost theme-toggle" id="themeToggle" type="button" aria-label="Alternar tema">🌙</button>
+      <a class="btn btn-ghost" href="/">Site</a>
+      <button class="btn btn-ghost hidden" id="logoutBtn">Sair</button>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- Login admin -->
+    <section id="screen-login" class="card">
+      <div class="hero-logo"><img src="/logo.svg" alt="Ziah Cortes" /></div>
+      <h1 style="text-align:center">Acesso administrativo</h1>
+      <p class="subtitle" style="text-align:center">Entre com seu usuário e senha.</p>
+      <form id="loginForm" novalidate>
+        <label for="username">Usuário</label>
+        <input id="username" type="text" autocomplete="username" />
+        <label for="password">Senha</label>
+        <input id="password" type="password" autocomplete="current-password" />
+        <div class="field-error" id="loginError"></div>
+        <button type="submit" class="btn btn-primary mt">Entrar</button>
+      </form>
+    </section>
+
+    <!-- Painel -->
+    <section id="screen-panel" class="hidden">
+      <h1>Agenda</h1>
+      <p class="subtitle">Selecione um dia para ver os horários. Você pode bloquear horários para que nenhum cliente possa marcar.</p>
+
+      <div class="days-scroll" id="adminDays"></div>
+
+      <div class="card" style="margin-top:8px">
+        <h2 id="panelDayTitle">Marcações</h2>
+        <div id="adminList"></div>
+
+        <div id="notesSection" class="notes-section hidden">
+          <label for="dayNotes">Observações do dia</label>
+          <textarea id="dayNotes" rows="4" maxlength="2000"
+            placeholder="Anotações para este dia (visíveis apenas para você)."></textarea>
+          <div class="notes-bar">
+            <span class="notes-status" id="notesStatus"></span>
+            <button class="btn btn-primary" id="saveNotesBtn" type="button">Salvar observações</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal confirmacao -->
+  <div id="modal" class="modal-backdrop hidden">
+    <div class="modal">
+      <div class="modal-icon" id="modalIcon">⚠️</div>
+      <h2 id="modalTitle"></h2>
+      <p id="modalText"></p>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="modalConfirm">Confirmar</button>
+        <button class="btn btn-secondary" id="modalCancel">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+
+  <script src="/theme.js"></script>
+  <script src="/admin.js"></script>
+</body>
+
+</html>
