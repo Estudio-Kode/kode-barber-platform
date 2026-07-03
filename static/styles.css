@@ -260,6 +260,9 @@ input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22, 22, 22, .
 }
 .slot:hover:not(.disabled) { border-color: var(--ink); }
 .slot.disabled { opacity: .38; cursor: not-allowed; text-decoration: line-through; }
+/* "Tempo limite": nao e selecionavel, mas e clicavel para abrir o aviso. */
+.slot.too-soon { opacity: .6; cursor: pointer; text-decoration: none; border-style: dashed; }
+.slot.too-soon:hover { opacity: .85; border-color: var(--muted); }
 .slot.selected { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 
 .live-note { font-size: 11px; color: var(--muted); display: flex; align-items: center; margin-top: 8px; text-transform: uppercase; letter-spacing: .12em; }
@@ -276,6 +279,14 @@ input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22, 22, 22, .
 .appt .info .svc { font-weight: 400; letter-spacing: .04em; }
 .appt .info .when { color: var(--muted); font-size: 13px; margin-top: 3px; }
 .appt .info .who { color: var(--muted); font-size: 13px; margin-top: 3px; }
+.phone-copy {
+  color: var(--text);
+  cursor: pointer;
+  border-bottom: 1px dashed currentColor;
+  transition: color .15s, opacity .15s;
+}
+.phone-copy:hover { opacity: .7; }
+.phone-copy.copied { color: var(--success); border-bottom-color: transparent; }
 .slot-row .btn { width: auto; flex: none; }
 .slot-row.blocked .info .svc { color: var(--muted); }
 .slot-row.past { opacity: .5; }

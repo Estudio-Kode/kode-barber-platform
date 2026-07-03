@@ -360,16 +360,40 @@ function renderSlots(containerId, slots) {
   c.innerHTML = "";
   slots.forEach((s) => {
     const el = document.createElement("div");
-    const disabled = s.booked || s.past || s.blocked;
-    el.className = "slot" + (disabled ? " disabled" : "") +
+    // "too_soon": falta pouco tempo para o horario -> nao pode marcar pelo site,
+    // mas continua clicavel para abrir o aviso com o link do WhatsApp.
+    const blockedSlot = s.booked || s.past || s.blocked;
+    el.className = "slot" +
+      (blockedSlot ? " disabled" : "") +
+      (s.too_soon && !blockedSlot ? " too-soon" : "") +
       (state.selectedTime === s.time ? " selected" : "");
     el.textContent = s.time;
-    if (!disabled) {
+    if (s.too_soon && !blockedSlot) {
+      el.title = "Tempo limite para marcar atingido — fale no WhatsApp";
+      el.addEventListener("click", () => showCutoffModal(s.time));
+    } else if (!blockedSlot) {
       el.addEventListener("click", () => selectTime(s.time));
     } else if (s.booked || s.blocked) {
       el.title = "Horário indisponível";
     }
     c.appendChild(el);
+  });
+}
+
+// Aviso de bloqueio por antecedencia minima: a marcacao precisa ser combinada
+// direto com o barbeiro pelo WhatsApp (mensagem ja pronta).
+function showCutoffModal(timeStr) {
+  const mins = (state.config && state.config.booking_cutoff_minutes) || 30;
+  const dateLabel = $("sumDate").textContent || "";
+  const quando = dateLabel ? `${dateLabel} às ${timeStr}` : `às ${timeStr}`;
+  openModal({
+    icon: "⏰",
+    title: "Tempo limite de marcação atingido",
+    text: `Faltam menos de ${mins} minutos para o horário das ${timeStr}. ` +
+          `Marcações com menos de ${mins} minutos de antecedência precisam ser ` +
+          `combinadas diretamente com o barbeiro pelo WhatsApp.`,
+    wa: `Olá! Gostaria de marcar o horário de ${quando}, mas o site informou que ` +
+        `o tempo limite de marcação foi atingido. Esse horário ainda está disponível?`,
   });
 }
 
@@ -445,6 +469,10 @@ async function doBook(confirmWeek) {
     }
     const proceed = await askWeekConfirm();
     if (proceed) doBook(true);
+  } else if (status === 403 && data.code === "cutoff") {
+    // O limite de antecedencia foi atingido entre carregar e confirmar.
+    showCutoffModal(state.selectedTime);
+    refreshSlots();
   } else if (status === 409) {
     toast(data.error || "Horário acabou de ser ocupado.", "error");
     refreshSlots();

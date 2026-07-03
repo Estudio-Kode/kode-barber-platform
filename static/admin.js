@@ -183,7 +183,10 @@ async function loadSlots() {
       // Horario com cliente marcado
       infoHtml =
         `<div class="svc">${s.time} &middot; ${escapeHtml(s.appointment.service)}</div>` +
-        `<div class="who">${escapeHtml(s.appointment.name)} &middot; ${formatPhone(s.appointment.phone)}</div>`;
+        `<div class="who">${escapeHtml(s.appointment.name)} &middot; ` +
+        `<span class="phone-copy" role="button" tabindex="0" ` +
+        `data-phone="${escapeHtml(s.appointment.phone)}" ` +
+        `title="Clique para copiar">${formatPhone(s.appointment.phone)}</span></div>`;
       btnHtml = `<button class="btn btn-danger" data-cancel="${s.appointment.id}">Desmarcar</button>`;
     } else if (s.blocked) {
       // Horario bloqueado pelo admin
@@ -233,6 +236,49 @@ async function loadSlots() {
       unblockSlot(time);
     });
   });
+  list.querySelectorAll(".phone-copy").forEach((el) => {
+    el.addEventListener("click", () => copyPhone(el));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); copyPhone(el); }
+    });
+  });
+}
+
+// Copia o telefone (apenas digitos) para a area de transferencia, com
+// feedback visual. Usa a Clipboard API quando disponivel e cai para um
+// fallback (textarea + execCommand) em contexto HTTP nao-seguro.
+async function copyPhone(el) {
+  const digits = (el.getAttribute("data-phone") || "").replace(/\D/g, "");
+  if (!digits) return;
+  let done = false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(digits);
+      done = true;
+    }
+  } catch (e) { /* cai para o fallback abaixo */ }
+  if (!done) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = digits;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      done = document.execCommand("copy");
+      document.body.removeChild(ta);
+    } catch (e) { done = false; }
+  }
+  if (done) {
+    const original = el.textContent;
+    el.classList.add("copied");
+    el.textContent = "Copiado ✓";
+    toast("Telefone copiado.", "success");
+    setTimeout(() => { el.textContent = original; el.classList.remove("copied"); }, 1200);
+  } else {
+    toast("Não foi possível copiar.", "error");
+  }
 }
 
 async function cancelAppointment(id) {

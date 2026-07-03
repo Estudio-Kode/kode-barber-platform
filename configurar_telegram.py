@@ -19,8 +19,8 @@ Para cada pessoa que for receber:
      token. Ele captura a ULTIMA pessoa que falou com o bot, adiciona aos
      destinatarios e envia um teste para ela.
 
-  4. Repita os passos 2-3 para cada pessoa. No fim, reinicie o site
-     (ENCERRAR_SITE.bat e depois INICIAR_SITE.bat).
+  4. Repita os passos 2-3 para cada pessoa. No fim, reinicie o site para
+     aplicar as mudancas.
 """
 
 import json
@@ -144,7 +144,7 @@ def main():
     print()
     print("Para adicionar outra pessoa, peca para ela tocar em 'Iniciar' no bot")
     print("@%s e rode este assistente de novo logo em seguida." % bot_name)
-    print("Por fim, reinicie o site (ENCERRAR_SITE.bat e depois INICIAR_SITE.bat).")
+    print("Por fim, reinicie o site para aplicar as mudancas.")
     return 0
 
 

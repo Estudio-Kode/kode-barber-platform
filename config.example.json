@@ -1,0 +1,46 @@
+{
+  "business_name": "Ziah Cortes",
+  "host": "127.0.0.1",
+  "port": 8000,
+  "whatsapp": "5531999999999",
+  "admin": {
+    "username": "admin",
+    "password": "troque-esta-senha"
+  },
+  "currency": "R$",
+  "services": [
+    { "name": "Corte", "price": 30, "addon_sobrancelha": 5 },
+    { "name": "Barba", "price": 20, "addon_sobrancelha": 10 },
+    { "name": "Corte + Barba", "price": 50, "addon_sobrancelha": 5 },
+    { "name": "Sobrancelha sem cortar", "price": 10 },
+    { "name": "Pezinho sem cortar", "price": 10 },
+    { "name": "Escova", "price": 15 },
+    { "name": "Luzes", "price": 40 },
+    { "name": "Luzes alinhadas", "price": 45 },
+    { "name": "Platinado/Cabelo colorido", "price": 65 },
+    { "name": "Tintura/pigmentação (cor preta)", "price": 20 },
+    { "name": "Tintura/pigmentação (castanho escuro/outros)", "price": 25 },
+    { "name": "Progressiva", "price": 60 },
+    { "name": "Botox", "price": 45 },
+    { "name": "Relaxamento", "price": 25 }
+  ],
+  "direct_services": [
+    "Botox",
+    "Sobrancelha sem cortar"
+  ],
+  "slots": {
+    "morning": ["08:00", "09:00", "10:00", "11:00"],
+    "afternoon": ["14:00", "15:00", "16:00", "17:00", "18:00", "19:00"]
+  },
+  "open_weekdays": [1, 2, 3, 4, 5],
+  "max_days_ahead": 30,
+  "cancel_min_hours": 2,
+  "booking_cutoff_minutes": 30,
+  "week_booking_limit": 1,
+  "telegram": {
+    "enabled": false,
+    "bot_token": "",
+    "chat_id": "",
+    "chat_ids": []
+  }
+}

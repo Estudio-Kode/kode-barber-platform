@@ -1,0 +1,15 @@
+# Configuração com segredos (token do Telegram, senha do admin)
+config.json
+
+# Banco de dados com dados reais de clientes (nomes, telefones)
+appointments.db
+appointments.db-wal
+appointments.db-shm
+
+# Logs e temporários
+tunnel.log
+*.log
+
+# Cache do Python
+__pycache__/
+*.pyc

@@ -287,6 +287,28 @@ def hours_until(date_str, time_str):
     return (dt - datetime.now()).total_seconds() / 3600.0
 
 
+def minutes_until(date_str, time_str):
+    """Minutos ate o horario; None se a data/hora for invalida."""
+    try:
+        dt = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return None
+    return (dt - datetime.now()).total_seconds() / 60.0
+
+
+def slot_within_cutoff(date_str, time_str):
+    """
+    True se o horario ainda nao passou, mas falta pouco tempo para marcar
+    pelo site (<= booking_cutoff_minutes). Nesse caso a marcacao deve ser
+    combinada direto com o barbeiro (WhatsApp).
+    """
+    m = minutes_until(date_str, time_str)
+    if m is None:
+        return False
+    cutoff = CONFIG.get("booking_cutoff_minutes", 30)
+    return 0 < m <= cutoff
+
+
 def week_bounds(date_str):
     """Retorna (segunda, domingo) em ISO da semana que contem date_str."""
     d = date.fromisoformat(date_str)
@@ -613,6 +635,7 @@ class Handler(BaseHTTPRequestHandler):
                 "currency": CONFIG.get("currency", "R$"),
                 "services": CONFIG["services"],
                 "direct_services": CONFIG["direct_services"],
+                "booking_cutoff_minutes": CONFIG.get("booking_cutoff_minutes", 30),
             })
             return
 
@@ -737,6 +760,7 @@ class Handler(BaseHTTPRequestHandler):
                 "booked": t in booked,
                 "blocked": t in blocked,
                 "past": slot_is_past(date_str, t),
+                "too_soon": slot_within_cutoff(date_str, t),
             })
         self._send_json({"date": date_str, "slots": slots})
 
@@ -779,6 +803,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if slot_is_past(date_str, time_str):
             self._send_json({"error": "Este horário já passou."}, 400)
+            return
+        if slot_within_cutoff(date_str, time_str):
+            cutoff = CONFIG.get("booking_cutoff_minutes", 30)
+            self._send_json({
+                "error": "O tempo limite para marcar este horário pelo site foi "
+                         "atingido (menos de %d minutos de antecedência). "
+                         "Combine direto com o barbeiro pelo WhatsApp." % cutoff,
+                "code": "cutoff",
+            }, 403)
             return
 
         week_limit = CONFIG.get("week_booking_limit", 1)
