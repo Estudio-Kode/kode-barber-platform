@@ -1,0 +1,16 @@
+# Ziah Cortes - Sistema de Agendamento
+#
+# Este projeto NAO usa nenhuma dependencia externa (nenhum pacote pip).
+# Ele roda apenas com a biblioteca padrao do Python.
+# Por isso este arquivo nao lista nenhum pacote.
+#
+# Requisito: Python 3.8 ou superior (recomendado 3.10+).
+#   Confira a versao com:  python --version
+#
+# Como rodar o servidor:
+#   python server.py
+#   (depois abra http://localhost:8000  e  http://localhost:8000/admin)
+#
+# Observacao: o link publico de acesso externo usa o "cloudflared",
+# um programa separado (NAO instalavel via pip). Instale, se precisar, com:
+#   winget install Cloudflare.cloudflared
