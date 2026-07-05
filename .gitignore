@@ -1,15 +1,27 @@
-# Configuração com segredos (token do Telegram, senha do admin)
+# --- Segredos e dados sensíveis (NUNCA versionar) ---
+# Configuração com segredos: token do Telegram, senha do admin, WhatsApp
 config.json
+# Variáveis de ambiente locais
+.env
+.env.*
+!.env.example
 
-# Banco de dados com dados reais de clientes (nomes, telefones)
+# --- Banco de dados com dados reais de clientes (nomes, telefones) ---
 appointments.db
 appointments.db-wal
 appointments.db-shm
+appointments.db-journal
 
-# Logs e temporários
+# --- Artefatos de editor / ferramentas de dev ---
+.claude/
+.vscode/
+.idea/
+
+# --- Logs e temporários ---
 tunnel.log
 *.log
 
-# Cache do Python
+# --- Cache do Python ---
 __pycache__/
 *.pyc
+*.pyo

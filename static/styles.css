@@ -373,3 +373,45 @@ input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(22, 22, 22, .
   .card { padding: 22px; }
   .brand-logo { height: 22px; }
 }
+
+/* ---------- Footer "created by kode" (marca Kode) ---------- */
+.site-footer {
+  margin-top: 30px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+.kode-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  padding: 6px 4px;
+  transition: opacity .18s;
+}
+.kode-credit:hover { opacity: .78; }
+.kode-credit .kc-pre {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: .1em;
+  text-transform: lowercase;
+}
+.kode-credit .kc-brand {
+  display: inline-block;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -.02em;
+}
+.kode-credit .kc-caret {
+  display: inline-block;
+  vertical-align: baseline;     /* base do cursor na linha de base do texto */
+  width: 3px;
+  height: 0.75em;               /* mesma altura do "k" e do "d" (ascendentes) */
+  margin-left: 1px;             /* bem colado no "e" */
+  border-radius: 1px;
+  background: #FF5A36;          /* Flame - acento da marca Kode */
+  animation: kode-caret-blink 1.15s steps(1, end) infinite;
+}
+@keyframes kode-caret-blink { 0%, 55% { opacity: 1; } 55.01%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .kode-credit .kc-caret { animation: none; } }

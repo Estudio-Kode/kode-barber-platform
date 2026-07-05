@@ -1,0 +1,42 @@
+# Serviço systemd do Sistema de Agendamento Ziah Cortes
+# Instale em: /etc/systemd/system/ziah.service
+#
+#   sudo cp deploy/ziah.service /etc/systemd/system/ziah.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ziah
+#
+# Ver logs:   journalctl -u ziah -f
+# Reiniciar:  sudo systemctl restart ziah
+
+[Unit]
+Description=Ziah Cortes - Sistema de Agendamento
+After=network.target
+
+[Service]
+Type=simple
+User=ziah
+Group=ziah
+WorkingDirectory=/opt/ziah
+
+# Segredos (senha do admin, token do Telegram) ficam neste arquivo, fora do Git.
+# O "-" no início faz o systemd não falhar se o arquivo não existir.
+EnvironmentFile=-/etc/ziah/ziah.env
+
+ExecStart=/usr/bin/python3 /opt/ziah/server.py
+Restart=always
+RestartSec=3
+
+# --- Reforço de segurança do processo ---
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
+# /opt/ziah precisa ser gravável (banco SQLite). O resto do sistema fica protegido.
+ReadWritePaths=/opt/ziah
+
+[Install]
+WantedBy=multi-user.target

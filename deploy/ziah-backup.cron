@@ -1,0 +1,8 @@
+# Backup diário do banco do Ziah Cortes.
+# Instale em: /etc/cron.d/ziah-backup
+#
+#   sudo cp deploy/ziah-backup.cron /etc/cron.d/ziah-backup
+#
+# Roda todo dia às 03:30. O log fica em /var/log/ziah-backup.log
+# (m  h  dom mon dow  usuário  comando)
+30 3 * * *  root  /opt/ziah/deploy/backup_db.sh >> /var/log/ziah-backup.log 2>&1
