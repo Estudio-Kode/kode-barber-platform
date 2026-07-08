@@ -40,8 +40,28 @@ MONTH_LABELS = ["", "Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
 # ---------------------------------------------------------------------------
 
 def load_config():
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """Carrega a configuracao do config.json local ou, se nao existir (ex.: em
+    plataformas como Railway, onde o arquivo e ignorado pelo Git de proposito),
+    da variavel de ambiente BARBER_CONFIG_JSON (o JSON inteiro como texto)."""
+    if os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    raw = os.environ.get("BARBER_CONFIG_JSON")
+    if raw:
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise SystemExit(
+                "BARBER_CONFIG_JSON esta definida, mas nao e um JSON valido: %s" % e
+            )
+
+    raise SystemExit(
+        "Nao encontrei configuracao. Crie um config.json (copie de "
+        "config.example.json) OU defina a variavel de ambiente "
+        "BARBER_CONFIG_JSON com o conteudo do config.json em uma linha so. "
+        "Em plataformas como Railway, use a segunda opcao."
+    )
 
 
 CONFIG = load_config()
@@ -1130,10 +1150,17 @@ def _warn_insecure_defaults():
 
 def main():
     init_db()
-    port = CONFIG.get("port", 8000)
-    # Por padrao escuta apenas no localhost. Para expor na rede, defina
-    # "host": "0.0.0.0" no config.json (ciente de que isso expoe o painel).
-    host = CONFIG.get("host", "127.0.0.1")
+    # Plataformas como Railway definem a porta pela variavel de ambiente PORT
+    # e exigem escutar em 0.0.0.0 (nao apenas localhost). Se PORT existir,
+    # assumimos que estamos nesse tipo de ambiente.
+    if os.environ.get("PORT"):
+        port = int(os.environ["PORT"])
+        host = "0.0.0.0"
+    else:
+        port = CONFIG.get("port", 8000)
+        # Por padrao escuta apenas no localhost. Para expor na rede, defina
+        # "host": "0.0.0.0" no config.json (ciente de que isso expoe o painel).
+        host = CONFIG.get("host", "127.0.0.1")
     _warn_insecure_defaults()
     server = ThreadingHTTPServer((host, port), Handler)
     print("=" * 52)
