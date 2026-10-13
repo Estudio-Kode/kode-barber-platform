@@ -86,3 +86,24 @@ Estes arquivos **nunca** vão para o Git (contêm segredos ou dados de clientes)
 
 Para configurar do zero, copie `config.example.json` para `config.json` e
 preencha os valores.
+
+---
+
+## 5. Consulta e cancelamento de clientes
+
+Consulta e cancelamento online estão desativados. Antes, o sistema aceitava o
+telefone como única prova de identidade; qualquer pessoa que soubesse o número
+poderia consultar ou cancelar horários. Até a integração de uma confirmação
+por SMS ou WhatsApp, o cliente deve tratar esses pedidos diretamente com o
+barbeiro. Não reative essas rotas sem validar um código temporário no servidor.
+
+## 6. Painel atrás do proxy
+
+O Caddy repassa o endereço real do visitante em `X-Real-IP`, e o servidor só
+aceita esse cabeçalho quando a conexão veio do próprio computador (localhost).
+Assim, o limite de tentativas do login distingue visitantes mesmo atrás do
+proxy. Mantenha o servidor Python escutando em `127.0.0.1`, como no serviço
+systemd incluído.
+
+Os logs do servidor guardam o caminho da rota sem parâmetros de URL, para não
+registrar telefones enviados em consultas antigas ou em outras rotas.

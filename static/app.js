@@ -301,10 +301,11 @@ async function selectService(svc, isDirect, price, addon) {
 }
 
 async function loadBookedWeeks() {
-  const q = `?name=${encodeURIComponent(state.user.name)}&phone=${encodeURIComponent(state.user.phone)}`;
-  const { ok, data } = await api("/api/my-appointments" + q);
-  state.bookedWeeks = (ok && data.booked_weeks) ? data.booked_weeks : [];
-  state.weekLimit = (data && data.week_limit != null) ? data.week_limit : 1;
+  // A consulta por telefone está desativada por segurança. O servidor continua
+  // aplicando o limite semanal ao confirmar cada nova marcação.
+  state.bookedWeeks = [];
+  state.weekLimit = (state.config && state.config.week_booking_limit != null)
+    ? state.config.week_booking_limit : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,71 +487,6 @@ async function doBook(confirmWeek) {
 // ---------------------------------------------------------------------------
 async function goManage() {
   show("screen-manage");
-  await loadMyAppointments();
-}
-
-async function loadMyAppointments() {
-  const list = $("manageList");
-  list.innerHTML = '<div class="empty">Carregando...</div>';
-  const q = `?name=${encodeURIComponent(state.user.name)}&phone=${encodeURIComponent(state.user.phone)}`;
-  const { data } = await api("/api/my-appointments" + q);
-  const appts = data.appointments || [];
-
-  if (appts.length === 0) {
-    list.innerHTML = '<div class="empty">Você ainda não tem marcações.</div>';
-    return;
-  }
-  list.innerHTML = "";
-  appts.forEach((a) => {
-    const card = document.createElement("div");
-    card.className = "appt";
-    const dt = formatDate(a.date);
-    let btnHtml;
-    if (a.can_cancel) {
-      btnHtml = `<button class="btn btn-danger" data-cancel="${a.id}">Desmarcar</button>`;
-    } else {
-      btnHtml = `<button class="btn btn-danger" data-late="1" style="opacity:.4">Desmarcar</button>`;
-    }
-    card.innerHTML =
-      `<div class="info">` +
-      `<div class="svc">${escapeHtml(a.service)}</div>` +
-      `<div class="when">${escapeHtml(dt)} às ${escapeHtml(a.time)}</div>` +
-      `</div>` + btnHtml;
-    list.appendChild(card);
-  });
-
-  // bind cancel
-  list.querySelectorAll("[data-cancel]").forEach((b) => {
-    b.addEventListener("click", () => cancelAppointment(b.getAttribute("data-cancel")));
-  });
-  list.querySelectorAll("[data-late]").forEach((b) => {
-    b.addEventListener("click", showLateModal);
-  });
-}
-
-function showLateModal() {
-  openModal({
-    icon: "⏰",
-    title: "Aviso",
-    text: "Para desmarcar com menos de 2 horas de antecedência, entre em contato diretamente com o barbeiro.",
-    wa: "Olá! Preciso desmarcar um horário que é em menos de 2 horas.",
-  });
-}
-
-async function cancelAppointment(id) {
-  const { ok, data } = await api(`/api/appointments/${id}`, {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: state.user.name, phone: state.user.phone }),
-  });
-  if (ok) {
-    toast("Marcação desmarcada.", "success");
-    loadMyAppointments();
-  } else if (data.code === "too_late") {
-    showLateModal();
-  } else {
-    toast(data.error || "Não foi possível desmarcar.", "error");
-  }
 }
 
 function formatDate(iso) {

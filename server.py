@@ -28,7 +28,13 @@ from urllib.parse import urlparse, parse_qs
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
-DB_PATH = os.path.join(BASE_DIR, "appointments.db")
+# Em plataformas com disco efemero (ex.: Railway), o banco precisa ficar num
+# volume persistente fora da pasta da aplicacao. Se BARBER_DATA_DIR estiver
+# definida (aponte-a para o "Mount Path" do volume), o banco vai para la;
+# senao, mantem o comportamento local de sempre (ao lado do server.py).
+DATA_DIR = os.environ.get("BARBER_DATA_DIR", BASE_DIR)
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "appointments.db")
 CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
 
 WEEKDAY_LABELS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -589,8 +595,26 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def log_message(self, fmt, *args):
-        # Log enxuto
-        print("[%s] %s" % (self.log_date_time_string(), fmt % args))
+        # Nunca grave query strings nos logs: elas podem conter telefone ou
+        # outros dados pessoais. Mantem apenas o caminho da rota.
+        safe_args = tuple(
+            urlparse(str(arg)).path if isinstance(arg, str) and arg.startswith("/") else arg
+            for arg in args
+        )
+        print("[%s] %s" % (self.log_date_time_string(), fmt % safe_args))
+
+    def _client_ip(self):
+        """Usa o IP informado pelo proxy somente quando o peer e localhost.
+
+        O Caddy configura X-Real-IP com o endereco remoto real. Ignoramos esse
+        cabecalho em qualquer conexao que nao venha do proxy local.
+        """
+        peer = self.client_address[0] if self.client_address else "?"
+        if peer in ("127.0.0.1", "::1"):
+            forwarded = self.headers.get("X-Real-IP", "").strip()
+            if forwarded and len(forwarded) <= 64 and "\n" not in forwarded:
+                return forwarded
+        return peer
 
     # ---- estaticos ----
     def _serve_static(self, path):
@@ -669,8 +693,11 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/my-appointments":
-            phone = normalize_phone((qs.get("phone") or [""])[0])
-            self._my_appointments(phone)
+            # Telefone sozinho nao comprova identidade. A consulta sera
+            # reabilitada quando houver verificacao por SMS/WhatsApp.
+            self._send_json({
+                "error": "A consulta online está temporariamente indisponível. Fale com o barbeiro pelo WhatsApp."
+            }, 410)
             return
 
         if path == "/api/admin/appointments":
@@ -736,8 +763,10 @@ class Handler(BaseHTTPRequestHandler):
 
         m = re.match(r"^/api/appointments/(\d+)$", path)
         if m:
-            data = self._read_json()
-            self._client_cancel(int(m.group(1)), data)
+            # Impede cancelamento autenticado apenas com telefone e ID sequencial.
+            self._send_json({
+                "error": "O cancelamento online está temporariamente indisponível. Fale com o barbeiro pelo WhatsApp."
+            }, 410)
             return
 
         m = re.match(r"^/api/admin/appointments/(\d+)$", path)
@@ -961,7 +990,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _admin_login(self, data):
-        ip = self.client_address[0] if self.client_address else "?"
+        ip = self._client_ip()
         if login_rate_limited(ip):
             self._send_json({
                 "error": "Muitas tentativas de login. Tente novamente em alguns minutos.",

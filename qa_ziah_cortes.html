@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QA — Ziah Cortes (Sistema de Agendamento)</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --border:#2a2f3a; --text:#e8eaed; --muted:#9aa3b2;
+    --accent:#7c9cff; --ok:#2fbf71; --bug:#e5484d; --na:#9aa3b2; --chip:#1f2430;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{position:sticky;top:0;z-index:10;background:linear-gradient(180deg,#0f1115 80%,transparent);padding:20px 24px 12px;border-bottom:1px solid var(--border)}
+  h1{margin:0 0 4px;font-size:1.4rem}
+  .sub{color:var(--muted);font-size:.9rem;margin:0 0 14px}
+  .progress-wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .bar{flex:1;min-width:180px;height:10px;background:var(--chip);border-radius:6px;overflow:hidden;border:1px solid var(--border)}
+  .bar-fill{height:100%;background:linear-gradient(90deg,var(--ok),var(--accent));width:0%;transition:width .25s}
+  .stats{font-size:.82rem;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+  .stats b{color:var(--text)}
+  .stat-bug b{color:var(--bug)}
+  .stat-ok b{color:var(--ok)}
+  .toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .toolbar button{background:var(--chip);border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;font-size:.8rem;cursor:pointer}
+  .toolbar button:hover{border-color:var(--accent)}
+  main{max-width:900px;margin:0 auto;padding:20px 24px 80px}
+  .section{margin-bottom:26px}
+  .section h2{font-size:1.05rem;border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:2px;display:flex;align-items:center;gap:8px}
+  .section h2 .count{font-size:.75rem;color:var(--muted);font-weight:400}
+  .case{background:var(--card);border:1px solid var(--border);border-radius:10px;margin:10px 0;padding:12px 14px;transition:border-color .15s}
+  .case.state-ok{border-color:rgba(47,191,113,.5)}
+  .case.state-bug{border-color:rgba(229,72,77,.6)}
+  .case.state-na{opacity:.55}
+  .case-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+  .case-id{font-size:.72rem;color:var(--muted);font-family:monospace}
+  .case-title{font-weight:600;margin:2px 0 4px;font-size:.95rem}
+  .case-desc{color:var(--muted);font-size:.85rem;line-height:1.45;margin:0 0 8px}
+  .case-expect{font-size:.82rem;color:#c9cfdb;background:#11141b;border:1px dashed var(--border);border-radius:6px;padding:6px 9px;margin-bottom:10px}
+  .case-expect b{color:var(--accent)}
+  .options{display:flex;gap:16px;flex-wrap:wrap}
+  .opt{display:flex;align-items:center;gap:6px;font-size:.85rem;cursor:pointer;user-select:none;padding:4px 8px;border-radius:6px;border:1px solid transparent}
+  .opt input{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+  .opt.ok{color:var(--ok)}
+  .opt.bug{color:var(--bug)}
+  .opt.na{color:var(--na)}
+  .notes{width:100%;margin-top:8px;background:#11141b;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:.82rem;padding:6px 8px;resize:vertical;min-height:32px;font-family:inherit}
+  .notes::placeholder{color:#5b6270}
+  footer{max-width:900px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:.8rem}
+  .badge-req{background:#3a2d16;color:#e8b33d;border:1px solid #5c471f;font-size:.68rem;padding:1px 6px;border-radius:4px;margin-left:6px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>QA — Ziah Cortes · Sistema de Agendamento</h1>
+  <p class="sub">Checklist de testes manuais antes de divulgar o link para a barbearia. Teste em <b>celular e desktop</b>. Marque cada caso como Funcionando, Erro/Bug ou N/A.</p>
+  <div class="progress-wrap">
+    <div class="bar"><div class="bar-fill" id="barFill"></div></div>
+    <div class="stats">
+      <span>Total: <b id="statTotal">0</b></span>
+      <span class="stat-ok">OK: <b id="statOk">0</b></span>
+      <span class="stat-bug">Bugs: <b id="statBug">0</b></span>
+      <span>N/A: <b id="statNa">0</b></span>
+      <span>Pendentes: <b id="statPending">0</b></span>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button onclick="exportResults()">Exportar resultado (.json)</button>
+    <button onclick="exportBugs()">Copiar lista de bugs</button>
+    <button onclick="if(confirm('Limpar todas as respostas?'))resetAll()">Limpar tudo</button>
+  </div>
+</header>
+
+<main id="main"></main>
+
+<footer>
+  Gerado a partir da análise do código (server.py, index.html/app.js, admin.html/admin.js). As respostas ficam salvas no navegador (localStorage) — reabrir este arquivo mantém o progresso, no mesmo navegador.
+</footer>
+
+<script>
+const DATA = [
+{ section: "1. Identificação do cliente", items: [
+  { id: "id-01", title: "Abrir o site pela primeira vez", desc: "Acessar a URL do site sem ter marcado antes.", expect: "Aparece a tela 'Bem-vindo' pedindo Nome e Telefone." },
+  { id: "id-02", title: "Nome vazio ou com 1 caractere", desc: "Tentar continuar com o campo Nome vazio, ou só uma letra.", expect: "Mostra erro 'Informe seu nome.' e não avança." },
+  { id: "id-03", title: "Telefone inválido", desc: "Digitar um telefone incompleto (menos de 10 dígitos) ou só letras.", expect: "Mostra erro 'Telefone inválido. Inclua DDD.' e não avança." },
+  { id: "id-04", title: "Identificação válida", desc: "Preencher nome (2+ letras) e telefone com DDD (10 ou 11 dígitos).", expect: "Avança para a tela de menu ('Olá, [nome]!')." },
+  { id: "id-05", title: "Trocar identificação", desc: "No menu, clicar em '← Trocar identificação'.", expect: "Volta para a tela de nome/telefone, limpando os dados preenchidos." },
+]},
+{ section: "2. Marcar horário — seleção de serviço", items: [
+  { id: "svc-01", title: "Lista de serviços carrega", desc: "Abrir 'Marcar horário' a partir do menu.", expect: "Mostra todos os serviços configurados no config.json, com nome e preço." },
+  { id: "svc-02", title: "Serviço 'direto com o barbeiro' (ex.: Botox, Sobrancelha sem cortar)", desc: "Clicar num serviço listado em direct_services.", expect: "Não deixa marcar pelo site; orienta a falar direto com o barbeiro pelo WhatsApp." },
+  { id: "svc-03", title: "Serviço com adicional de sobrancelha", desc: "Clicar num serviço que tem addon_sobrancelha (ex.: Corte, Barba).", expect: "Abre modal perguntando se quer incluir sobrancelha, mostrando o preço adicional." },
+  { id: "svc-04", title: "Aceitar o adicional de sobrancelha", desc: "No modal do item anterior, clicar 'Sim, incluir'.", expect: "O nome do serviço passa a exibir '+ Sobrancelha' e o preço soma o adicional nas telas seguintes." },
+  { id: "svc-05", title: "Recusar o adicional de sobrancelha", desc: "No modal, clicar 'Não, continuar'.", expect: "Segue com o serviço original, sem o adicional." },
+  { id: "svc-06", title: "Serviço sem adicional (ex.: Escova)", desc: "Clicar num serviço que não tem addon_sobrancelha.", expect: "Vai direto para a tela de dia/horário, sem mostrar o modal de sobrancelha." },
+  { id: "svc-07", title: "Voltar da tela de serviços", desc: "Clicar '← Voltar' na tela de serviços.", expect: "Retorna ao menu inicial." },
+]},
+{ section: "3. Marcar horário — dia e horário", items: [
+  { id: "slot-01", title: "Dias exibidos respeitam open_weekdays", desc: "Conferir a lista de dias disponíveis para marcar.", expect: "Só aparecem os dias da semana configurados como abertos (ex.: terça a sábado), dentro do limite de max_days_ahead." },
+  { id: "slot-02", title: "Selecionar um dia", desc: "Clicar em um dos dias na lista.", expect: "Carrega os horários de manhã e tarde configurados em slots.morning/afternoon." },
+  { id: "slot-03", title: "Horário já ocupado", desc: "Escolher um dia com um horário já marcado por outro cliente (ou marcado por você mesmo antes).", expect: "O horário aparece desabilitado/marcado como ocupado, não é clicável." },
+  { id: "slot-04", title: "Horário bloqueado pelo admin", desc: "Escolher um horário que o barbeiro bloqueou no painel.", expect: "Aparece como indisponível para o cliente, igual a um horário ocupado." },
+  { id: "slot-05", title: "Horário já passou (dia de hoje)", desc: "No dia de hoje, olhar horários mais cedo que a hora atual.", expect: "Aparecem desabilitados/marcados como passado." },
+  { id: "slot-06", title: "Horário dentro do prazo de corte (booking_cutoff_minutes)", desc: "Tentar marcar um horário que está a menos de 30 min (ou o valor configurado) de distância.", expect: "Avisa que é tarde demais para marcar pelo site e sugere falar no WhatsApp; não deixa confirmar." },
+  { id: "slot-07", title: "Selecionar horário disponível", desc: "Clicar em um horário livre, dentro do prazo permitido.", expect: "Mostra a tela de resumo com serviço, dia e horário escolhidos, com botão 'Confirmar marcação'." },
+  { id: "slot-08", title: "Confirmar marcação (caso normal)", desc: "Clicar 'Confirmar marcação' num horário válido, cliente sem marcação na semana.", expect: "Marcação é criada; mostra confirmação de sucesso." },
+  { id: "slot-09", title: "Cliente já tem marcação na semana (week_booking_limit)", desc: "Tentar marcar um segundo horário na mesma semana (segunda a domingo).", expect: "Aparece modal perguntando se quer marcar mesmo assim ('Você já tem um horário esta semana')." },
+  { id: "slot-10", title: "Confirmar marcação extra na semana", desc: "No modal do caso anterior, clicar 'Sim, marcar mesmo assim'.", expect: "A segunda marcação é criada normalmente." },
+  { id: "slot-11", title: "Cancelar marcação extra na semana", desc: "No modal, clicar 'Não, sair'.", expect: "Fecha o modal sem criar a marcação." },
+  { id: "slot-12", title: "Concorrência: dois clientes marcam o mesmo horário ao mesmo tempo", desc: "Simular (ou testar com dois dispositivos) duas pessoas tentando confirmar o mesmo horário quase ao mesmo tempo.", expect: "Só a primeira consegue; a segunda recebe aviso de que o horário acabou de ser ocupado." },
+  { id: "slot-13", title: "Link de WhatsApp na tela de horários", desc: "Clicar em 'Falar no WhatsApp' na tela de dia/horário.", expect: "Abre o WhatsApp (web ou app) com o número certo da barbearia, em nova aba." },
+  { id: "slot-14", title: "Voltar aos serviços", desc: "Clicar '← Voltar aos serviços'.", expect: "Retorna para a tela de seleção de serviço, mantendo a navegação coerente." },
+]},
+{ section: "4. Gerenciar marcações (cliente)", items: [
+  { id: "mng-01", title: "Ver marcações futuras", desc: "No menu, ir em 'Gerenciar marcações' com o telefone que tem marcação(ões) futura(s).", expect: "Lista todas as marcações futuras vinculadas àquele telefone." },
+  { id: "mng-02", title: "Nenhuma marcação", desc: "Acessar 'Gerenciar marcações' com um telefone sem marcações.", expect: "Mostra lista vazia com mensagem apropriada (não trava nem mostra erro)." },
+  { id: "mng-03", title: "Cancelar com antecedência suficiente (> cancel_min_hours)", desc: "Cancelar uma marcação com mais de 2h (ou valor configurado) de antecedência.", expect: "Cancelamento é aceito; horário volta a ficar disponível para outros clientes." },
+  { id: "mng-04", title: "Cancelar em cima da hora (< cancel_min_hours)", desc: "Tentar cancelar uma marcação a menos de 2h do horário.", expect: "Bloqueia o cancelamento pelo site e orienta a falar direto com o barbeiro pelo WhatsApp." },
+  { id: "mng-05", title: "Marcações passadas não aparecem", desc: "Verificar se horários que já passaram somem da lista de 'Minhas marcações'.", expect: "Só marcações futuras/atuais aparecem na lista." },
+]},
+{ section: "5. Painel administrativo — acesso", items: [
+  { id: "adm-01", title: "Acessar /admin sem login", desc: "Ir direto para a URL /admin.", expect: "Mostra tela de login (usuário e senha), não a agenda." },
+  { id: "adm-02", title: "Login com credenciais erradas", desc: "Tentar entrar com usuário ou senha incorretos.", expect: "Mostra 'Usuário ou senha incorretos.' e permanece na tela de login." },
+  { id: "adm-03", title: "Login com credenciais corretas", desc: "Entrar com o usuário/senha configurados (BARBER_ADMIN_USER / BARBER_ADMIN_PASSWORD).", expect: "Acessa a tela da Agenda normalmente." },
+  { id: "adm-04", title: "Limite de tentativas de login", desc: "Errar a senha 5+ vezes seguidas rapidamente.", expect: "Bloqueia novas tentativas por alguns minutos, mesmo com a senha certa (mensagem de 'muitas tentativas')." },
+  { id: "adm-05", title: "Sessão expira", desc: "Ficar logado sem usar por mais de 8h (ou forçar expirando o token), depois tentar uma ação.", expect: "Sistema desloga automaticamente e pede login de novo ('Sessão expirada')." },
+  { id: "adm-06", title: "Sair do painel", desc: "Clicar no botão 'Sair'.", expect: "Volta para a tela de login e a sessão para de funcionar." },
+]},
+{ section: "6. Painel administrativo — agenda e marcações", items: [
+  { id: "adm-07", title: "Ver marcações de um dia", desc: "Selecionar um dia na lista de dias do painel.", expect: "Mostra todas as marcações daquele dia, com nome, telefone e serviço." },
+  { id: "adm-08", title: "Cancelar marcação pelo painel", desc: "Cancelar uma marcação de um cliente através do painel.", expect: "Marcação é removida; horário volta a ficar livre para o site; cliente é notificado (se Telegram ativo)." },
+  { id: "adm-09", title: "Bloquear horário livre", desc: "Clicar 'Bloquear' num horário sem marcação.", expect: "Horário fica marcado como bloqueado e some da lista de disponíveis no site do cliente." },
+  { id: "adm-10", title: "Tentar bloquear horário já marcado", desc: "Tentar bloquear um horário que já tem cliente.", expect: "Sistema impede e avisa para desmarcar o cliente antes de bloquear." },
+  { id: "adm-11", title: "Desbloquear horário", desc: "Clicar 'Desbloquear' num horário bloqueado.", expect: "Horário volta a ficar disponível para os clientes marcarem." },
+]},
+{ section: "7. Painel administrativo — observações do dia", items: [
+  { id: "adm-12", title: "Escrever observação", desc: "Digitar um texto no campo de observações de um dia e sair do campo (ou aguardar).", expect: "Mostra 'Salvando…' e depois 'Salvo ✓'; ao trocar de dia e voltar, o texto continua lá." },
+  { id: "adm-13", title: "Apagar observação", desc: "Limpar o texto de uma observação já salva e salvar de novo.", expect: "Observação é removida (não fica um texto vazio salvo indefinidamente)." },
+  { id: "adm-14", title: "Limite de tamanho da observação", desc: "Colar um texto bem longo (mais de 2000 caracteres) no campo.", expect: "Campo não aceita além do limite (maxlength), sem travar a tela." },
+]},
+{ section: "8. Notificações (Telegram)", items: [
+  { id: "tg-01", title: "Aviso de nova marcação", desc: "Fazer uma marcação pelo site com o Telegram configurado e ativado.", expect: "Barbeiro (e demais destinatários) recebem mensagem no Telegram com nome, telefone, serviço, dia e hora." },
+  { id: "tg-02", title: "Aviso de cancelamento pelo cliente", desc: "Cancelar uma marcação como cliente.", expect: "Chega aviso no Telegram indicando que foi cancelado 'pelo cliente'." },
+  { id: "tg-03", title: "Aviso de cancelamento pelo painel", desc: "Cancelar uma marcação pelo painel admin.", expect: "Chega aviso no Telegram indicando que foi cancelado 'pelo painel'." },
+  { id: "tg-04", title: "Telegram desativado ou sem token", desc: "Com telegram.enabled=false (ou token ausente), fazer uma marcação.", expect: "Marcação funciona normalmente pelo site, sem travar nem gerar erro visível, só não envia aviso." },
+]},
+{ section: "9. Geral, visual e segurança", items: [
+  { id: "gen-01", title: "Funciona no celular", desc: "Testar o fluxo completo (identificação → marcar → confirmar) num celular real.", expect: "Layout se adapta à tela, botões são clicáveis, nada corta ou fica ilegível." },
+  { id: "gen-02", title: "Funciona no desktop", desc: "Testar o mesmo fluxo num navegador de computador.", expect: "Layout se adapta bem à tela maior, sem elementos quebrados." },
+  { id: "gen-03", title: "Alternar tema claro/escuro", desc: "Clicar no botão de tema (🌙) no topo.", expect: "Alterna entre claro e escuro e mantém a escolha ao recarregar a página." },
+  { id: "gen-04", title: "Link para o site a partir do admin", desc: "No painel, clicar em 'Site'.", expect: "Volta para a página do cliente (/)." },
+  { id: "gen-05", title: "Nenhuma credencial exposta", desc: "Ver o código-fonte da página (Ctrl+U) e as respostas de /api/config no navegador.", expect: "Não aparece senha, hash, token do Telegram nem qualquer segredo — só dados públicos (nome, WhatsApp, serviços)." },
+  { id: "gen-06", title: "Rota inexistente", desc: "Acessar uma URL de API que não existe, ex.: /api/xyz.", expect: "Retorna erro 404 tratado ('Rota não encontrada'), sem travar o servidor." },
+  { id: "gen-07", title: "Acessar rota de admin sem estar logado (via API direta)", desc: "Tentar chamar uma rota /api/admin/... sem token de sessão válido.", expect: "Retorna 401 Não autorizado, mesmo que a pessoa tente pular a tela de login." },
+  { id: "gen-08", title: "Carregamento do site", desc: "Medir o tempo até a página ficar pronta para uso, numa conexão comum de celular.", expect: "Carrega em poucos segundos, sem demora perceptível." },
+  { id: "gen-09", title: "Backup do banco", desc: "Rodar o backup manual (backup_db.sh) ou conferir se o backup diário automático está ativo.", expect: "Gera um arquivo de backup válido do appointments.db." },
+  { id: "gen-10", title: "Dados sobrevivem a um redeploy/restart", desc: "Fazer uma marcação de teste, reiniciar/redeployar o servidor, e conferir se ela continua lá.", expect: "Marcação de teste continua existindo (volume persistente funcionando)." },
+]},
+];
+
+const STORAGE_KEY = "qa_ziah_cortes_v1";
+
+function loadState(){
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch(e){ return {}; }
+}
+function saveState(state){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+let state = loadState();
+
+function render(){
+  const main = document.getElementById("main");
+  main.innerHTML = "";
+  DATA.forEach(sec => {
+    const secEl = document.createElement("div");
+    secEl.className = "section";
+    const h2 = document.createElement("h2");
+    h2.innerHTML = `${sec.section} <span class="count">(${sec.items.length} casos)</span>`;
+    secEl.appendChild(h2);
+
+    sec.items.forEach(item => {
+      const cur = state[item.id] || {};
+      const caseEl = document.createElement("div");
+      caseEl.className = "case" + (cur.status ? " state-" + cur.status : "");
+      caseEl.id = "case-" + item.id;
+
+      caseEl.innerHTML = `
+        <div class="case-top">
+          <div style="flex:1">
+            <div class="case-id">${item.id}</div>
+            <div class="case-title">${item.title}</div>
+          </div>
+        </div>
+        <p class="case-desc"><b>Como testar:</b> ${item.desc}</p>
+        <div class="case-expect"><b>Esperado:</b> ${item.expect}</div>
+        <div class="options">
+          <label class="opt ok"><input type="radio" name="${item.id}" value="ok" ${cur.status==="ok"?"checked":""}/> Funcionando</label>
+          <label class="opt bug"><input type="radio" name="${item.id}" value="bug" ${cur.status==="bug"?"checked":""}/> Erro / Bug</label>
+          <label class="opt na"><input type="radio" name="${item.id}" value="na" ${cur.status==="na"?"checked":""}/> N/A</label>
+        </div>
+        <textarea class="notes" placeholder="Observações (opcional) — ex.: o que deu errado, print, passos exatos...">${cur.note || ""}</textarea>
+      `;
+      secEl.appendChild(caseEl);
+
+      caseEl.querySelectorAll('input[type=radio]').forEach(r => {
+        r.addEventListener("change", () => {
+          state[item.id] = state[item.id] || {};
+          state[item.id].status = r.value;
+          saveState(state);
+          caseEl.className = "case state-" + r.value;
+          updateStats();
+        });
+      });
+      const notesEl = caseEl.querySelector(".notes");
+      notesEl.addEventListener("input", () => {
+        state[item.id] = state[item.id] || {};
+        state[item.id].note = notesEl.value;
+        saveState(state);
+      });
+    });
+
+    main.appendChild(secEl);
+  });
+  updateStats();
+}
+
+function totalCases(){
+  return DATA.reduce((n, s) => n + s.items.length, 0);
+}
+
+function updateStats(){
+  const total = totalCases();
+  let ok=0, bug=0, na=0;
+  Object.values(state).forEach(v => {
+    if (v.status === "ok") ok++;
+    else if (v.status === "bug") bug++;
+    else if (v.status === "na") na++;
+  });
+  const answered = ok + bug + na;
+  document.getElementById("statTotal").textContent = total;
+  document.getElementById("statOk").textContent = ok;
+  document.getElementById("statBug").textContent = bug;
+  document.getElementById("statNa").textContent = na;
+  document.getElementById("statPending").textContent = total - answered;
+  document.getElementById("barFill").style.width = (total ? (answered/total*100) : 0) + "%";
+}
+
+function resetAll(){
+  state = {};
+  saveState(state);
+  render();
+}
+
+function exportResults(){
+  const total = totalCases();
+  const out = { generated_at: new Date().toISOString(), total, results: {} };
+  DATA.forEach(sec => sec.items.forEach(item => {
+    out.results[item.id] = {
+      title: item.title,
+      section: sec.section,
+      status: (state[item.id] && state[item.id].status) || "pendente",
+      note: (state[item.id] && state[item.id].note) || "",
+    };
+  }));
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "qa_ziah_cortes_resultado.json";
+  a.click();
+}
+
+function exportBugs(){
+  let lines = ["Bugs encontrados — Ziah Cortes\n"];
+  DATA.forEach(sec => sec.items.forEach(item => {
+    const cur = state[item.id];
+    if (cur && cur.status === "bug") {
+      lines.push(`[${item.id}] ${item.title}`);
+      if (cur.note) lines.push(`  Obs: ${cur.note}`);
+    }
+  }));
+  if (lines.length === 1) lines.push("(nenhum bug marcado até agora)");
+  const text = lines.join("\n");
+  navigator.clipboard.writeText(text).then(
+    () => alert("Lista de bugs copiada para a área de transferência."),
+    () => alert(text)
+  );
+}
+
+render();
+</script>
+</body>
+</html>

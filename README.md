@@ -2,7 +2,8 @@
 
 Sistema de agendamento online para a barbearia **Ziah Cortes**. O cliente marca
 horário pelo site; o painel `/admin` gerencia a agenda; o barbeiro recebe avisos
-de marcação e cancelamento pelo Telegram.
+de marcação e cancelamento pelo Telegram. A consulta e o cancelamento pelo
+cliente devem ser feitos pelo WhatsApp até que exista verificação de identidade.
 
 Feito para ser simples de operar: um único servidor em **Python (biblioteca
 padrão, zero dependências externas)** com banco **SQLite**. Não precisa instalar
@@ -161,6 +162,12 @@ Arquivos de deploy inclusos na pasta `deploy/`:
 
 > **Antes de divulgar**, faça os passos do [`SEGURANCA.md`](SEGURANCA.md)
 > (rotacionar o token do Telegram e limpar o histórico do Git).
+
+> **Consulta/cancelamento do cliente:** foram desativados no site porque o
+> telefone sozinho não comprova a identidade do cliente. Para reativar, integre
+> um serviço de verificação por SMS/WhatsApp e valide o código no servidor.
+> Até lá, o cliente deve pedir a consulta ou o cancelamento ao barbeiro pelo
+> WhatsApp.
 
 ---
 
