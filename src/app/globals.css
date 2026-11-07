@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root,
+[data-theme="dark"] {
+  --bg-page: #09090b;
+  --bg-surface: #121215;
+  --bg-elevated: #1a1a1f;
+  --bg-subtle: #232329;
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(245, 158, 11, 0.45);
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+  --accent-soft: rgba(245, 158, 11, 0.14);
+  --accent-fg: #09090b;
+  --whatsapp: #16a34a;
+  --whatsapp-hover: #15803d;
+  --danger: #ef4444;
+  --danger-soft: rgba(239, 68, 68, 0.14);
+  --success: #22c55e;
+  --success-soft: rgba(34, 197, 94, 0.14);
+  --shadow-card: 0 20px 50px -15px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="light"] {
+  --bg-page: #f8f7f4;
+  --bg-surface: #ffffff;
+  --bg-elevated: #f3f2ee;
+  --bg-subtle: #e7e5df;
+  --border-color: rgba(24, 24, 27, 0.1);
+  --border-strong: rgba(217, 119, 6, 0.55);
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #71717a;
+  --accent: #d97706;
+  --accent-hover: #b45309;
+  --accent-soft: rgba(217, 119, 6, 0.12);
+  --accent-fg: #ffffff;
+  --whatsapp: #16a34a;
+  --whatsapp-hover: #15803d;
+  --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --shadow-card: 0 12px 32px -10px rgba(24, 24, 27, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Custom scrollbar horizontal discreta para os dias */
+.days-scroll-container::-webkit-scrollbar {
+  height: 5px;
+}
+.days-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+.days-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 999px;
+}

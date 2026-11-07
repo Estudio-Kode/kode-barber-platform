@@ -1,180 +1,101 @@
-# Ziah Cortes — Sistema de Agendamento
+# Ziah Cortes — Sistema de Agendamento (Next.js + TypeScript + Supabase)
 
-Sistema de agendamento online para a barbearia **Ziah Cortes**. O cliente marca
-horário pelo site; o painel `/admin` gerencia a agenda; o barbeiro recebe avisos
-de marcação e cancelamento pelo Telegram. A consulta e o cancelamento pelo
-cliente devem ser feitos pelo WhatsApp até que exista verificação de identidade.
-
-Feito para ser simples de operar: um único servidor em **Python (biblioteca
-padrão, zero dependências externas)** com banco **SQLite**. Não precisa instalar
-pacotes com `pip`.
+Sistema de agendamento online para a barbearia **Ziah Cortes**, desenvolvido pela **Kode** em **Next.js (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL)**.
 
 ---
 
-## Estrutura do projeto
+## Estrutura do Projeto
 
 ```
 PROJETO_ZIAH/
-├── server.py              # Servidor HTTP + API + banco (SQLite)
-├── config.json            # Configuração e SEGREDOS (NÃO versionado)
-├── config.example.json    # Modelo para criar o config.json
-├── configurar_telegram.py # Assistente para cadastrar quem recebe os avisos
-├── CONFIGURAR_TELEGRAM.bat# Atalho (Windows) para o assistente acima
-├── requirements.txt       # Só notas — o projeto não tem dependências pip
-├── appointments.db        # Banco com dados reais (NÃO versionado)
-├── static/                # Front-end (HTML, CSS, JS)
-│   ├── index.html         # Página do cliente
-│   ├── admin.html         # Painel do barbeiro
-│   ├── app.js / admin.js  # Lógica das páginas
-│   ├── styles.css / theme.js / logo.svg
-├── deploy/                # Arquivos de produção (servidor)
-│   ├── DEPLOY.md          # Guia de deploy passo a passo
-│   ├── setup_servidor.sh  # Instalação automática (Ubuntu)
-│   ├── ziah.service       # Serviço systemd
-│   ├── Caddyfile          # Proxy reverso + HTTPS automático
-│   ├── ziah.env.example   # Modelo dos segredos
-│   ├── backup_db.sh       # Backup diário do banco
-│   └── ziah-backup.cron   # Agendamento do backup
-├── README.md              # Este arquivo
-└── SEGURANCA.md           # Passos de segurança (LEIA antes de produção)
+├── src/
+│   ├── app/
+│   │   ├── page.tsx                        # Interface de agendamento do cliente (Mobile + Desktop)
+│   │   ├── admin/page.tsx                  # Painel administrativo do barbeiro (/admin)
+│   │   ├── layout.tsx                      # Layout raiz + suporte a tema claro/escuro
+│   │   ├── globals.css                     # Design tokens (Modern Barber Dark/Gold & Light)
+│   │   └── api/                            # Rotas Server-Only protegidas
+│   │       ├── config/route.ts             # Configuração pública da barbearia
+│   │       ├── days/route.ts               # Dias abertos selecionáveis
+│   │       ├── availability/route.ts       # Horários disponíveis em tempo real
+│   │       ├── appointments/route.ts       # Criação de marcação com trava de concorrência
+│   │       ├── appointments/[id]/route.ts  # 410 Gone (cancelamento direto desativado)
+│   │       ├── my-appointments/route.ts    # 410 Gone (consulta por telefone desativada)
+│   │       └── admin/                      # Rotas autenticadas do barbeiro
+│   │           ├── login/route.ts          # Login com rate-limit por IP + cookie HttpOnly
+│   │           ├── session/route.ts        # Verificação e encerramento de sessão
+│   │           ├── slots/route.ts          # Grade do dia (marcado/bloqueado/livre + receita)
+│   │           ├── appointments/route.ts   # Listagem de marcações
+│   │           ├── appointments/[id]/route.ts # Desmarcar cliente + aviso no Telegram
+│   │           ├── blocks/route.ts         # Bloquear / liberar horários
+│   │           └── notes/route.ts          # Observações do dia com auto-save
+│   ├── components/
+│   │   ├── BrandLogo.tsx                   # Logo vetorial Ziah Cortes
+│   │   ├── ThemeToggle.tsx                 # Alternador de tema Claro / Escuro
+│   │   └── KodeFooter.tsx                  # Assinatura "created by kode"
+│   ├── config/
+│   │   └── business.ts                     # Serviços, preços, horários e regras de negócio
+│   └── lib/
+│       ├── auth.ts                         # Sessão HMAC-SHA256 + timing-safe + rate-limit
+│       ├── domain.ts                       # Regras de fuso (America/Sao_Paulo), cutoff e datas
+│       ├── request-guard.ts                # Proteção anti-DoS (limite 16 KB) e anti-spam
+│       ├── supabase-server.ts              # Cliente REST Server-Only para o Supabase
+│       └── telegram.ts                     # Disparo assíncrono de notificações no Telegram
+├── .env.example                            # Modelo das variáveis de ambiente
+├── .env.local                              # Segredos locais (ignorado pelo Git)
+├── security-test.mjs                       # Bateria automatizada de auditoria de segurança
+├── test-suite.mjs                          # Bateria automatizada de testes de integração
+└── package.json
 ```
 
 ---
 
-## Requisitos
+## Como rodar localmente
 
-- **Python 3.8+** (recomendado 3.10 ou superior). Confira com `python --version`.
-
-## Rodar localmente
-
-1. Crie o `config.json` a partir do modelo:
-
+1. Instale as dependências (se ainda não instalou):
    ```bash
-   copy config.example.json config.json     # Windows
-   # cp config.example.json config.json     # Linux/Mac
+   npm install
    ```
 
-2. Edite o `config.json` com seus dados (WhatsApp, senha do admin, serviços).
+2. Certifique-se de que o arquivo `.env.local` está preenchido (use `.env.example` como base).
 
-3. Inicie o servidor:
-
+3. Inicie o servidor de desenvolvimento:
    ```bash
-   python server.py
+   npm run dev
    ```
 
-4. Acesse:
-   - Cliente: <http://localhost:8000>
-   - Painel:  <http://localhost:8000/admin>
-
-O servidor cria as tabelas do banco sozinho no primeiro start.
+4. Acesse no navegador:
+   - **Cliente:** [http://localhost:3000](http://localhost:3000)
+   - **Painel do Barbeiro:** [http://localhost:3000/admin](http://localhost:3000/admin)
 
 ---
 
-## Configuração (`config.json`)
+## Testes Automatizados
 
-Principais campos:
+- **Auditoria de Segurança (9 verificações):**
+  ```bash
+  node --env-file=.env.local security-test.mjs
+  ```
 
-| Campo | O que é |
-|---|---|
-| `business_name` | Nome exibido no site |
-| `whatsapp` | Número (só dígitos, com DDI) para o botão de WhatsApp |
-| `admin.username` / `admin.password_sha256` | Login do painel (senha em hash SHA-256) |
-| `services` | Lista de serviços com `name`, `price` e `addon_sobrancelha` opcional |
-| `direct_services` | Serviços que só podem ser combinados direto com o barbeiro |
-| `slots.morning` / `slots.afternoon` | Horários disponíveis |
-| `open_weekdays` | Dias abertos (0=segunda … 6=domingo) |
-| `max_days_ahead` | Até quantos dias à frente o cliente pode marcar |
-| `cancel_min_hours` | Antecedência mínima para o cliente cancelar sozinho |
-| `booking_cutoff_minutes` | Minutos antes do horário em que o site trava a marcação |
-| `week_booking_limit` | Máximo de marcações por cliente na semana |
-| `telegram` | Token do bot e destinatários dos avisos |
-| `host` / `port` | Endereço de escuta (padrão `127.0.0.1:8000`) |
-
-### Segredos por variável de ambiente (recomendado em produção)
-
-Em vez de deixar os segredos no `config.json`, você pode defini-los no ambiente.
-Eles têm **prioridade** sobre o arquivo:
-
-| Variável | Substitui |
-|---|---|
-| `BARBER_ADMIN_USER` | `admin.username` |
-| `BARBER_ADMIN_PASSWORD` | senha do admin (texto puro; o servidor faz o hash) |
-| `BARBER_TELEGRAM_TOKEN` | `telegram.bot_token` |
-| `BARBER_TELEGRAM_CHAT_ID` | um destinatário do Telegram |
-
-Exemplo (Windows PowerShell):
-
-```powershell
-$env:BARBER_ADMIN_PASSWORD = "minha-senha-forte"
-python server.py
-```
+- **Testes de Integração Ponta a Ponta (12 cenários com Supabase):**
+  ```bash
+  npm run build
+  node --env-file=.env.local test-suite.mjs
+  ```
 
 ---
 
-## Notificações no Telegram
+## Publicar em Produção (Vercel)
 
-Para o barbeiro (e você) receberem avisos de marcação/cancelamento:
-
-1. Crie um bot no **@BotFather** (`/newbot`) e guarde o token.
-2. Cada pessoa que vai receber abre o bot e toca em **Iniciar**.
-3. Rode o assistente logo em seguida:
-
-   ```bash
-   python configurar_telegram.py      # ou dê 2 cliques em CONFIGURAR_TELEGRAM.bat
-   ```
-
-   Ele captura quem falou com o bot e adiciona aos destinatários. Repita para
-   cada pessoa e reinicie o site no final.
-
----
-
-## Colocar em produção (servidor)
-
-Como o site vai atender vários clientes, o ideal é um **servidor Linux (VPS)**
-sempre no ar, com HTTPS e reinício automático. O passo a passo completo —
-escolha do provedor, criação do VPS, deploy, HTTPS e backup — está em
-**[`deploy/DEPLOY.md`](deploy/DEPLOY.md)**.
-
-Resumo da arquitetura: o **Caddy** recebe os acessos em HTTPS (porta 443) e
-repassa para o `server.py`, que escuta só em `127.0.0.1:8000` sob o **systemd**
-(que o mantém no ar). O banco SQLite dá conta do movimento de uma barbearia.
-
-Instalação rápida (num Ubuntu 24.04, já como root):
-
-```bash
-apt-get update && apt-get install -y git
-git clone https://github.com/Estudio-Kode/kode-ziahcortes-sisagendamento.git ziah
-cd ziah
-sudo bash deploy/setup_servidor.sh SEU-IP    # ex.: ...setup_servidor.sh 203.0.113.45
-```
-
-O script instala tudo e liga o HTTPS automático em `https://SEU-IP.sslip.io`
-(funciona **sem precisar de domínio**; dá para trocar por um domínio depois).
-
-Arquivos de deploy inclusos na pasta `deploy/`:
-
-- `DEPLOY.md` — guia completo passo a passo
-- `setup_servidor.sh` — instalação automática (Ubuntu)
-- `ziah.service` — serviço systemd (reinício automático)
-- `Caddyfile` — proxy reverso com HTTPS automático
-- `ziah.env.example` — modelo dos segredos (senha do admin, token)
-- `backup_db.sh` + `ziah-backup.cron` — backup diário automático do banco
-
-> **Antes de divulgar**, faça os passos do [`SEGURANCA.md`](SEGURANCA.md)
-> (rotacionar o token do Telegram e limpar o histórico do Git).
-
-> **Consulta/cancelamento do cliente:** foram desativados no site porque o
-> telefone sozinho não comprova a identidade do cliente. Para reativar, integre
-> um serviço de verificação por SMS/WhatsApp e valide o código no servidor.
-> Até lá, o cliente deve pedir a consulta ou o cancelamento ao barbeiro pelo
-> WhatsApp.
-
----
-
-## Segurança já embutida
-
-O servidor já traz: cabeçalhos de segurança (CSP, `X-Frame-Options`, etc.),
-limite de tentativas de login por IP, sessões de admin com expiração, proteção
-contra *path traversal* nos arquivos estáticos, limite de tamanho de requisição
-e trava de concorrência nas marcações. Ainda assim, cumpra os passos do
-[`SEGURANCA.md`](SEGURANCA.md) antes de expor o site.
+1. Suba o repositório para o GitHub (após limpar o histórico antigo conforme `SEGURANCA.md`).
+2. Na [Vercel](https://vercel.com), clique em **Add New Project** e importe o repositório.
+3. Em **Environment Variables**, adicione as variáveis do `.env.local`:
+   - `SUPABASE_URL`
+   - `SUPABASE_SECRET_KEY`
+   - `BARBER_ADMIN_USER`
+   - `BARBER_ADMIN_PASSWORD`
+   - `BARBER_SESSION_SECRET`
+   - `BARBER_TELEGRAM_ENABLED`
+   - `BARBER_TELEGRAM_TOKEN`
+   - `BARBER_TELEGRAM_CHAT_IDS`
+4. Clique em **Deploy**. O site entrará no ar automaticamente com HTTPS.

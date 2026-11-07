@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 170" role="img" aria-label="Ziah Cortes">
+  <g fill="#141414" stroke="#141414">
+    <text x="320" y="74" text-anchor="middle"
+          font-family="'Helvetica Neue', 'Segoe UI', Arial, sans-serif"
+          font-size="70" font-weight="300" letter-spacing="16" stroke="none">ZIAH CORTES</text>
+
+    <!-- divider lines -->
+    <line x1="92"  y1="120" x2="286" y2="120" stroke-width="1.6" stroke-linecap="round"/>
+    <line x1="354" y1="120" x2="548" y2="120" stroke-width="1.6" stroke-linecap="round"/>
+
+    <!-- crossed scissors -->
+    <g fill="none" stroke-width="2.4" stroke-linecap="round">
+      <line x1="312" y1="132" x2="333" y2="101"/>
+      <line x1="328" y1="132" x2="307" y2="101"/>
+      <circle cx="310" cy="135" r="5.4"/>
+      <circle cx="330" cy="135" r="5.4"/>
+    </g>
+  </g>
+</svg>
+

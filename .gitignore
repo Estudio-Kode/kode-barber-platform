@@ -1,27 +1,47 @@
-# --- Segredos e dados sensíveis (NUNCA versionar) ---
-# Configuração com segredos: token do Telegram, senha do admin, WhatsApp
-config.json
-# Variáveis de ambiente locais
-.env
-.env.*
-!.env.example
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
 
-# --- Banco de dados com dados reais de clientes (nomes, telefones) ---
-appointments.db
-appointments.db-wal
-appointments.db-shm
-appointments.db-journal
+# testing
+/coverage
 
-# --- Artefatos de editor / ferramentas de dev ---
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
 .claude/
 .vscode/
 .idea/
-
-# --- Logs e temporários ---
-tunnel.log
 *.log
 
-# --- Cache do Python ---
-__pycache__/
-*.pyc
-*.pyo
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (NUNCA versionar segredos)
+.env
+.env.*
+!.env.example
+config.json
+appointments.db*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
