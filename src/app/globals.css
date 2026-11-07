@@ -69,3 +69,19 @@ body {
   background: var(--border-color);
   border-radius: 999px;
 }
+
+/* Alternância do logo Kode no rodapé conforme o tema */
+.kode-logo-dark {
+  display: inline-block;
+}
+.kode-logo-light {
+  display: none;
+}
+
+[data-theme="light"] .kode-logo-dark {
+  display: none;
+}
+[data-theme="light"] .kode-logo-light {
+  display: inline-block;
+}
+
