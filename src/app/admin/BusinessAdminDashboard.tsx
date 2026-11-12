@@ -10,7 +10,25 @@ type SettingsData = {
   hours: BusinessScheduleRow[];
   services: BusinessServiceRow[];
 };
-type Section = "overview" | "services" | "hours";
+type Section = "overview" | "agenda" | "services" | "hours";
+type Appointment = {
+  id: number;
+  phone: string;
+  service: string;
+  date: string;
+  time: string;
+  name: string;
+  created_at: string;
+  status: "scheduled" | "completed" | "cancelled" | "no_show";
+  price_cents: number | null;
+  barber_id: string | null;
+};
+type DashboardSummary = {
+  today: string;
+  end_date: string;
+  appointments: Appointment[];
+  upcoming_appointments: Appointment[];
+};
 type AddonDraft = { name: string; price: string };
 type ServiceDraft = {
   name: string;
@@ -77,6 +95,27 @@ function formatCurrency(cents: number): string {
     style: "currency",
     currency: "BRL",
   }).format(cents / 100);
+}
+
+function formatShortDate(date: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
+
+function appointmentStatusLabel(
+  status: Appointment["status"]
+): string {
+  const labels: Record<Appointment["status"], string> = {
+    scheduled: "Agendado",
+    completed: "Concluído",
+    cancelled: "Cancelado",
+    no_show: "Não compareceu",
+  };
+  return labels[status];
 }
 
 function datetimeLocalValue(value: string | null | undefined): string {
@@ -155,6 +194,13 @@ export default function BusinessAdminDashboard({
   onLogout: () => void;
 }) {
   const [section, setSection] = useState<Section>("overview");
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [dayAppointments, setDayAppointments] = useState<Appointment[]>([]);
+  const [loadingAgenda, setLoadingAgenda] = useState(false);
+  const [updatingAppointmentId, setUpdatingAppointmentId] = useState<number | null>(
+    null
+  );
   const [settings, setSettings] = useState<SettingsData>({
     hours: [],
     services: [],
@@ -179,13 +225,37 @@ export default function BusinessAdminDashboard({
     setDays(scheduleToDays(data.hours));
   }, []);
 
+  const loadSummary = useCallback(async () => {
+    const data = await requestJson<DashboardSummary>("/api/admin/summary");
+    setSummary(data);
+    setSelectedDate((current) => current || data.today);
+  }, []);
+
+  const loadAgenda = useCallback(async (date: string) => {
+    if (!date) return;
+    setLoadingAgenda(true);
+    try {
+      const data = await requestJson<{
+        appointments: Appointment[];
+      }>(`/api/admin/appointments?date=${encodeURIComponent(date)}`);
+      setDayAppointments(data.appointments);
+    } finally {
+      setLoadingAgenda(false);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
-    requestJson<SettingsData>("/api/admin/settings")
-      .then((data) => {
+    Promise.all([
+      requestJson<SettingsData>("/api/admin/settings"),
+      requestJson<DashboardSummary>("/api/admin/summary"),
+    ])
+      .then(([data, dashboardSummary]) => {
         if (!active) return;
         setSettings(data);
         setDays(scheduleToDays(data.hours));
+        setSummary(dashboardSummary);
+        setSelectedDate(dashboardSummary.today);
       })
       .catch((loadError: unknown) => {
         if (active) {
@@ -209,10 +279,79 @@ export default function BusinessAdminDashboard({
     [settings.services]
   );
   const openDayCount = settings.hours.length;
+  const scheduledToday =
+    summary?.appointments.filter(
+      (appointment) =>
+        appointment.date === summary.today && appointment.status === "scheduled"
+    ) ?? [];
+  const completedToday =
+    summary?.appointments.filter(
+      (appointment) =>
+        appointment.date === summary.today && appointment.status === "completed"
+    ).length ?? 0;
+  const upcomingAppointments = summary?.upcoming_appointments ?? [];
+  // Only appointments with a stored price contribute; older records may not have a price snapshot.
+  const estimatedRevenueToday = scheduledToday.reduce(
+    (total, appointment) => total + (appointment.price_cents ?? 0),
+    0
+  );
+  const appointmentsWithPriceToday = scheduledToday.filter(
+    (appointment) => appointment.price_cents !== null
+  ).length;
 
   function showNotice(message: string) {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 4000);
+  }
+
+  function navigateToSection(nextSection: Section) {
+    setSection(nextSection);
+    setError("");
+    if (nextSection === "agenda" && selectedDate) {
+      loadAgenda(selectedDate).catch((loadError: unknown) =>
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Não foi possível carregar a agenda."
+        )
+      );
+    }
+  }
+
+  async function updateAppointmentStatus(
+    appointment: Appointment,
+    status: "completed" | "cancelled" | "no_show"
+  ) {
+    const confirmation =
+      status === "cancelled"
+        ? `Cancelar o agendamento de ${appointment.name} às ${appointment.time}?`
+        : status === "completed"
+          ? `Marcar o atendimento de ${appointment.name} como concluído?`
+          : `Marcar ${appointment.name} como não compareceu?`;
+    if (!window.confirm(confirmation)) return;
+
+    setUpdatingAppointmentId(appointment.id);
+    setError("");
+    try {
+      await requestJson(
+        `/api/admin/appointments/${appointment.id}`,
+        "PATCH",
+        { status }
+      );
+      await Promise.all([
+        loadAgenda(selectedDate),
+        loadSummary(),
+      ]);
+      showNotice(`Agendamento atualizado: ${appointmentStatusLabel(status)}.`);
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : "Não foi possível atualizar o agendamento."
+      );
+    } finally {
+      setUpdatingAppointmentId(null);
+    }
   }
 
   async function saveSchedule(event: FormEvent<HTMLFormElement>) {
@@ -405,6 +544,7 @@ export default function BusinessAdminDashboard({
             {(
               [
                 ["overview", "Visão geral"],
+                ["agenda", "Agenda"],
                 ["services", "Serviços"],
                 ["hours", "Funcionamento"],
               ] as Array<[Section, string]>
@@ -416,10 +556,7 @@ export default function BusinessAdminDashboard({
                     : "text-zinc-400 hover:bg-white/5 hover:text-white"
                 }`}
                 key={key}
-                onClick={() => {
-                  setSection(key);
-                  setError("");
-                }}
+                onClick={() => navigateToSection(key)}
                 type="button"
               >
                 {title}
@@ -458,6 +595,7 @@ export default function BusinessAdminDashboard({
             {(
               [
                 ["overview", "Visão geral"],
+                ["agenda", "Agenda"],
                 ["services", "Serviços"],
                 ["hours", "Funcionamento"],
               ] as Array<[Section, string]>
@@ -469,7 +607,7 @@ export default function BusinessAdminDashboard({
                     : "text-zinc-400"
                 }`}
                 key={key}
-                onClick={() => setSection(key)}
+                onClick={() => navigateToSection(key)}
                 type="button"
               >
                 {title}
@@ -485,13 +623,17 @@ export default function BusinessAdminDashboard({
               <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">
                 {section === "overview"
                   ? "Visão geral"
+                  : section === "agenda"
+                    ? "Agenda"
                   : section === "services"
                     ? "Serviços"
                     : "Funcionamento"}
               </h2>
               <p className="mt-2 text-sm text-zinc-500">
                 {section === "overview"
-                  ? "Configure o que seus clientes veem na página pública."
+                  ? "Acompanhe seus atendimentos e a operação da semana."
+                  : section === "agenda"
+                    ? "Consulte e atualize os agendamentos desta barbearia."
                   : section === "services"
                     ? "Defina preços, adicionais, promoções e formas de agendamento."
                     : "Configure individualmente os dias e horários de atendimento."}
@@ -514,21 +656,37 @@ export default function BusinessAdminDashboard({
                 Carregando configurações...
               </div>
             ) : section === "overview" ? (
-              <section className="grid gap-4 sm:grid-cols-2">
+              <section>
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 {[
                   {
-                    title: "Serviços publicados",
-                    value: activeServices.length,
-                    description: "Serviços ativos na sua página pública.",
-                    action: "Gerenciar serviços",
-                    target: "services" as Section,
+                    title: "Agendamentos hoje",
+                    value: scheduledToday.length,
+                    description: "Horários ainda previstos para hoje.",
+                    action: "Abrir agenda",
+                    target: "agenda" as Section,
                   },
                   {
-                    title: "Dias de atendimento",
-                    value: openDayCount,
-                    description: "Dias da semana com horários configurados.",
-                    action: "Configurar funcionamento",
-                    target: "hours" as Section,
+                    title: "Concluídos hoje",
+                    value: completedToday,
+                    description: "Atendimentos marcados como concluídos.",
+                    action: "Ver agenda",
+                    target: "agenda" as Section,
+                  },
+                  {
+                    title: "Próximos 7 dias",
+                    value: upcomingAppointments.length,
+                    description: "Agendamentos que ainda estão previstos.",
+                    action: "Ver próximos horários",
+                    target: "agenda" as Section,
+                  },
+                  {
+                    title: "Receita prevista hoje",
+                    value: formatCurrency(estimatedRevenueToday),
+                    description:
+                      "Soma dos preços registrados nos agendamentos de hoje.",
+                    action: "Ver detalhes",
+                    target: "agenda" as Section,
                   },
                 ].map((card) => (
                   <article
@@ -544,24 +702,218 @@ export default function BusinessAdminDashboard({
                     </p>
                     <button
                       className="mt-5 text-sm font-medium text-amber-300 hover:text-amber-200"
-                      onClick={() => setSection(card.target)}
+                      onClick={() => navigateToSection(card.target)}
                       type="button"
                     >
                       {card.action} →
                     </button>
                   </article>
                 ))}
-                <article className="rounded-2xl border border-indigo-300/10 bg-indigo-300/[0.04] p-5 sm:col-span-2 sm:p-6">
-                  <h3 className="text-sm font-medium text-indigo-100">
-                    Próximas etapas do painel
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-zinc-400">
-                    Nesta etapa, você já pode configurar serviços e horários
-                    publicados na página da barbearia. A gestão de agenda,
-                    equipe, produtos e dados da empresa será adicionada em
-                    seguida.
-                  </p>
-                </article>
+                </div>
+                <p className="mt-3 text-xs text-zinc-600">
+                  Preços antigos não registrados não entram na receita prevista
+                  ({appointmentsWithPriceToday} de {scheduledToday.length} agendamentos de hoje têm valor salvo).
+                </p>
+                <section className="mt-6 rounded-2xl border border-white/7 bg-[#111318] p-5 sm:p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">
+                        Próximos atendimentos
+                      </h3>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Agendamentos previstos para os próximos sete dias.
+                      </p>
+                    </div>
+                    <button
+                      className="text-sm font-medium text-amber-300 hover:text-amber-200"
+                      onClick={() => navigateToSection("agenda")}
+                      type="button"
+                    >
+                      Abrir agenda →
+                    </button>
+                  </div>
+                  <div className="mt-4 divide-y divide-white/6">
+                    {upcomingAppointments.slice(0, 5).map((appointment) => (
+                      <div
+                        className="flex flex-wrap items-center justify-between gap-3 py-3"
+                        key={appointment.id}
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-zinc-200">
+                            {appointment.name || "Cliente"}
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            {appointment.service}
+                          </p>
+                        </div>
+                        <p className="text-xs text-zinc-400">
+                          {formatShortDate(appointment.date)} · {appointment.time}
+                        </p>
+                      </div>
+                    ))}
+                    {upcomingAppointments.length === 0 && (
+                      <p className="py-5 text-sm text-zinc-500">
+                        Não há atendimentos agendados para os próximos sete dias.
+                      </p>
+                    )}
+                  </div>
+                </section>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    className="rounded-xl border border-white/8 p-4 text-left transition hover:border-amber-300/20"
+                    onClick={() => navigateToSection("services")}
+                    type="button"
+                  >
+                    <span className="block text-sm font-medium text-zinc-200">
+                      Serviços publicados
+                    </span>
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      {activeServices.length} serviços ativos na página pública.
+                    </span>
+                  </button>
+                  <button
+                    className="rounded-xl border border-white/8 p-4 text-left transition hover:border-amber-300/20"
+                    onClick={() => navigateToSection("hours")}
+                    type="button"
+                  >
+                    <span className="block text-sm font-medium text-zinc-200">
+                      Dias de atendimento
+                    </span>
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      {openDayCount} dias configurados nesta semana.
+                    </span>
+                  </button>
+                </div>
+              </section>
+            ) : section === "agenda" ? (
+              <section>
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-3 rounded-2xl border border-white/7 bg-[#111318] p-5">
+                  <div>
+                    <h3 className="text-base font-semibold text-white">
+                      Agendamentos por dia
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Marque como concluído, não compareceu ou cancele.
+                    </p>
+                  </div>
+                  <label className={`${labelClass} w-full sm:w-56`}>
+                    Data
+                    <input
+                      className={inputClass}
+                      max={summary?.end_date}
+                      min={summary?.today}
+                      onChange={(event) => {
+                        const nextDate = event.target.value;
+                        setSelectedDate(nextDate);
+                        setError("");
+                        loadAgenda(nextDate).catch((loadError: unknown) =>
+                          setError(
+                            loadError instanceof Error
+                              ? loadError.message
+                              : "Não foi possível carregar a agenda."
+                          )
+                        );
+                      }}
+                      type="date"
+                      value={selectedDate}
+                    />
+                  </label>
+                </div>
+                {loadingAgenda ? (
+                  <div className="rounded-2xl border border-white/7 bg-[#111318] p-6 text-sm text-zinc-400">
+                    Carregando agendamentos...
+                  </div>
+                ) : dayAppointments.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 px-6 py-10 text-center">
+                    <p className="text-sm font-medium text-zinc-300">
+                      Nenhum agendamento neste dia
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Quando um cliente reservar um horário, ele aparecerá aqui.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {dayAppointments.map((appointment) => (
+                      <article
+                        className="rounded-2xl border border-white/7 bg-[#111318] p-5"
+                        key={appointment.id}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="flex min-w-0 gap-4">
+                            <div className="flex h-14 w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-amber-400/10 text-amber-200">
+                              <span className="text-lg font-semibold">
+                                {appointment.time}
+                              </span>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="font-semibold text-white">
+                                  {appointment.name || "Cliente"}
+                                </h3>
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[10px] ${
+                                    appointment.status === "scheduled"
+                                      ? "bg-amber-400/10 text-amber-200"
+                                      : appointment.status === "completed"
+                                        ? "bg-emerald-400/10 text-emerald-200"
+                                        : appointment.status === "no_show"
+                                          ? "bg-rose-400/10 text-rose-200"
+                                          : "bg-white/6 text-zinc-400"
+                                  }`}
+                                >
+                                  {appointmentStatusLabel(appointment.status)}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-sm text-zinc-300">
+                                {appointment.service}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {appointment.phone}
+                                {appointment.price_cents !== null &&
+                                  ` · ${formatCurrency(appointment.price_cents)}`}
+                              </p>
+                            </div>
+                          </div>
+                          {appointment.status === "scheduled" && (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                className="rounded-lg border border-emerald-300/15 px-3 py-2 text-xs text-emerald-200 hover:bg-emerald-300/[0.06] disabled:opacity-50"
+                                disabled={updatingAppointmentId === appointment.id}
+                                onClick={() =>
+                                  updateAppointmentStatus(appointment, "completed")
+                                }
+                                type="button"
+                              >
+                                Concluído
+                              </button>
+                              <button
+                                className="rounded-lg border border-rose-300/15 px-3 py-2 text-xs text-rose-200 hover:bg-rose-300/[0.06] disabled:opacity-50"
+                                disabled={updatingAppointmentId === appointment.id}
+                                onClick={() =>
+                                  updateAppointmentStatus(appointment, "no_show")
+                                }
+                                type="button"
+                              >
+                                Não compareceu
+                              </button>
+                              <button
+                                className="rounded-lg border border-white/8 px-3 py-2 text-xs text-zinc-400 hover:text-white disabled:opacity-50"
+                                disabled={updatingAppointmentId === appointment.id}
+                                onClick={() =>
+                                  updateAppointmentStatus(appointment, "cancelled")
+                                }
+                                type="button"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
               </section>
             ) : section === "hours" ? (
               <form

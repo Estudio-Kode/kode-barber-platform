@@ -25,7 +25,9 @@ KODE_BARBER/
 │   │       ├── my-appointments/            # Consulta pública desativada
 │   │       ├── admin/                      # Login e rotas autenticadas por barbearia
 │   │       │   ├── hours/                   # Horários de funcionamento
-│   │       │   └── services/                # Cadastro e edição de serviços
+│   │       │   ├── services/                # Cadastro e edição de serviços
+│   │       │   ├── appointments/            # Agenda e status dos atendimentos
+│   │       │   └── summary/                 # Indicadores da semana
 │   │       ├── public/businesses/[slug]/    # Disponibilidade e agendamento público
 │   │       └── platform/                   # Login, barbearias, acessos e planos
 │   │           ├── login/route.ts

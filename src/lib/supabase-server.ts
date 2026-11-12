@@ -879,6 +879,9 @@ export interface AppointmentRow {
   date: string;
   time: string; // no Postgres TIME vem como "HH:MM:SS", normalizamos para "HH:MM"
   created_at: string;
+  status: "scheduled" | "completed" | "cancelled" | "no_show";
+  price_cents: number | null;
+  barber_id: string | null;
   clients?: { name: string } | null;
 }
 
@@ -902,11 +905,24 @@ export function normalizeDbTime(t: string): string {
 export async function dbGetAppointmentsByDate(
   dateStr: string,
   businessId = LEGACY_BUSINESS_ID
-): Promise<Array<{ id: number; phone: string; service: string; date: string; time: string; name: string; created_at: string }>> {
+): Promise<
+  Array<{
+    id: number;
+    phone: string;
+    service: string;
+    date: string;
+    time: string;
+    name: string;
+    created_at: string;
+    status: AppointmentRow["status"];
+    price_cents: number | null;
+    barber_id: string | null;
+  }>
+> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?date=eq.${encodeURIComponent(
     dateStr
-  )}&business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,clients(name)&order=time.asc`;
+  )}&business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,status,price_cents,barber_id,clients(name)&order=time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -924,6 +940,9 @@ export async function dbGetAppointmentsByDate(
     date: r.date,
     time: normalizeDbTime(r.time),
     created_at: r.created_at,
+    status: r.status,
+    price_cents: r.price_cents,
+    barber_id: r.barber_id,
     name: r.clients?.name ?? "",
   }));
 }
@@ -931,10 +950,10 @@ export async function dbGetAppointmentsByDate(
 export async function dbGetAllAppointments(
   businessId = LEGACY_BUSINESS_ID
 ): Promise<
-  Array<{ id: number; phone: string; service: string; date: string; time: string; name: string; created_at: string }>
+  Awaited<ReturnType<typeof dbGetAppointmentsByDate>>
 > {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,clients(name)&order=date.asc,time.asc`;
+  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,status,price_cents,barber_id,clients(name)&order=date.asc,time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -952,7 +971,46 @@ export async function dbGetAllAppointments(
     date: r.date,
     time: normalizeDbTime(r.time),
     created_at: r.created_at,
+    status: r.status,
+    price_cents: r.price_cents,
+    barber_id: r.barber_id,
     name: r.clients?.name ?? "",
+  }));
+}
+
+export async function dbGetAppointmentsInDateRange(
+  businessId: string,
+  startDate: string,
+  endDate: string
+): Promise<Awaited<ReturnType<typeof dbGetAppointmentsByDate>>> {
+  const { url } = getSupabaseEnv();
+  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${encodeURIComponent(
+    businessId
+  )}&and=(date.gte.${encodeURIComponent(startDate)},date.lte.${encodeURIComponent(
+    endDate
+  )})&select=id,phone,service,date,time,created_at,status,price_cents,barber_id,clients(name)&order=date.asc,time.asc`;
+  const response = await fetch(endpoint, {
+    headers: buildHeaders(),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Erro ao consultar resumo de agendamentos: ${response.status} ${errorText}`
+    );
+  }
+  const rows: AppointmentRow[] = await response.json();
+  return rows.map((row) => ({
+    id: row.id,
+    phone: row.phone,
+    service: row.service,
+    date: row.date,
+    time: normalizeDbTime(row.time),
+    created_at: row.created_at,
+    status: row.status,
+    price_cents: row.price_cents,
+    barber_id: row.barber_id,
+    name: row.clients?.name ?? "",
   }));
 }
 
@@ -1122,6 +1180,21 @@ export async function dbDeleteAppointmentById(
     const errText = await res.text();
     throw new Error(`Erro ao remover agendamento: ${res.status} ${errText}`);
   }
+}
+
+export async function dbUpdateAppointmentStatus(
+  id: number,
+  businessId: string,
+  status: AppointmentRow["status"]
+): Promise<boolean> {
+  const rows = await platformDbRows<{ id: number }>(
+    `appointments?id=eq.${id}&business_id=eq.${encodeURIComponent(businessId)}&status=eq.scheduled&select=id`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }
+  );
+  return Boolean(rows[0]);
 }
 
 export async function dbHasAppointmentAt(
