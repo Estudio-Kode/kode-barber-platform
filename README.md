@@ -12,6 +12,8 @@ KODE_BARBER/
 │   ├── app/
 │   │   ├── page.tsx                        # Página inicial da plataforma
 │   │   ├── admin/page.tsx                  # Login do responsável e troca inicial de senha
+│   │   ├── admin/BusinessAdminDashboard.tsx # Configuração de serviços e horários
+│   │   ├── b/[slug]/page.tsx               # Página pública de cada barbearia
 │   │   ├── platform/page.tsx               # Central Kode para administrar barbearias e planos (/platform)
 │   │   ├── layout.tsx                      # Layout raiz + suporte a tema claro/escuro
 │   │   ├── globals.css                     # Design tokens (Modern Barber Dark/Gold & Light)
@@ -22,6 +24,9 @@ KODE_BARBER/
 │   │       ├── appointments/               # Agendamentos públicos e cancelamento desativado
 │   │       ├── my-appointments/            # Consulta pública desativada
 │   │       ├── admin/                      # Login e rotas autenticadas por barbearia
+│   │       │   ├── hours/                   # Horários de funcionamento
+│   │       │   └── services/                # Cadastro e edição de serviços
+│   │       ├── public/businesses/[slug]/    # Disponibilidade e agendamento público
 │   │       └── platform/                   # Login, barbearias, acessos e planos
 │   │           ├── login/route.ts
 │   │           ├── session/route.ts
@@ -37,6 +42,7 @@ KODE_BARBER/
 │   │   └── business.ts                     # Serviços, preços, horários e regras de negócio
 │   └── lib/
 │       ├── auth.ts                         # Sessões HMAC-SHA256 separadas e rate-limit
+│       ├── business-settings.ts            # Validação de serviços e horários
 │       ├── password-policy.ts              # Requisitos de senha dos administradores
 │       ├── domain.ts                       # Regras de fuso (America/Sao_Paulo), cutoff e datas
 │       ├── request-guard.ts                # Proteção anti-DoS (limite 16 KB) e anti-spam
@@ -70,17 +76,18 @@ KODE_BARBER/
 
 ## Configuração multiempresa
 
-1. Em um Supabase novo, aplique as migrações em ordem: primeiro
+1. Em um Supabase novo, aplique as migrações em ordem:
    `supabase/migrations/202611120001_platform_foundation.sql`,
-   `supabase/migrations/202611120002_remove_ziah_business.sql` e
-   `supabase/migrations/202611120003_business_admin_access.sql`.
+   `supabase/migrations/202611120002_remove_ziah_business.sql`,
+   `supabase/migrations/202611120003_business_admin_access.sql` e
+   `supabase/migrations/202611120004_barber_booking_settings.sql`.
    A primeira cria as tabelas e um plano inicial sem barbearias de demonstração; a segunda
    também remove a barbearia de demonstração de ambientes em que a primeira migração já havia sido aplicada.
    A exclusão da empresa remove em cascata os dados vinculados a ela.
-2. Se as migrações 001 e 002 já foram aplicadas, execute
-   `supabase/migrations/202611120003_business_admin_access.sql` no SQL Editor do Supabase
-   para habilitar o acesso dos administradores. A migração 002 só precisa ser executada
-   se ainda não tiver sido aplicada.
+2. Se as migrações 001, 002 e 003 já foram aplicadas, execute
+   `supabase/migrations/202611120004_barber_booking_settings.sql` no SQL Editor do Supabase.
+   Essa migração cria operações transacionais para salvar o funcionamento semanal e os
+   serviços com seus adicionais e promoções.
 3. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e os segredos
    `PLATFORM_SESSION_SECRET` e `BARBER_SESSION_SECRET`, cada um aleatório e com pelo menos
    32 caracteres, no `.env.local`.
@@ -90,8 +97,11 @@ KODE_BARBER/
    e-mail. No primeiro acesso em `/admin`, o responsável deverá criar uma nova senha.
 
 Esta etapa oferece a central da plataforma, login individual, troca obrigatória da senha
-inicial e separação por `business_id` nas rotas administrativas. O agendamento público
-por barbearia e os módulos operacionais ainda serão conectados em fases seguintes.
+inicial, separação por `business_id` nas rotas administrativas e uma página pública de
+agendamento em `/b/{slug}`. O administrador de cada barbearia pode configurar serviços,
+adicionais, promoções, horários semanais e serviços marcados para contato direto no painel
+`/admin`. O funcionamento atual permite um intervalo contínuo por dia; intervalos
+divididos no mesmo dia e horários específicos por barbeiro serão adicionados em outra etapa.
 
 ---
 

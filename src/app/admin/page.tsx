@@ -5,6 +5,7 @@ import {
   isStrongPassword,
   PASSWORD_REQUIREMENTS,
 } from "@/lib/password-policy";
+import BusinessAdminDashboard from "@/app/admin/BusinessAdminDashboard";
 
 type AdminSession = {
   authenticated: true;
@@ -135,6 +136,15 @@ export default function BarberAdminPage() {
 
   const isChangeStage = stage === "change";
 
+  if (stage === "ready" && session) {
+    return (
+      <BusinessAdminDashboard
+        businessName={session.business.name}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#0b0c0f] px-5 py-12 text-white">
       <section className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#111318] p-7 shadow-2xl sm:p-10">
@@ -149,23 +159,6 @@ export default function BarberAdminPage() {
           <p className="mt-5 text-center text-sm text-zinc-400">
             Verificando acesso...
           </p>
-        ) : stage === "ready" ? (
-          <>
-            <h1 className="mt-2 text-center text-2xl font-semibold tracking-tight">
-              {session?.business.name}
-            </h1>
-            <p className="mt-3 text-center text-sm leading-6 text-zinc-400">
-              Acesso autenticado. O painel operacional desta barbearia será
-              disponibilizado nesta área.
-            </p>
-            <button
-              className="mt-7 w-full rounded-xl border border-white/10 px-4 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white/5 hover:text-white"
-              onClick={handleLogout}
-              type="button"
-            >
-              Sair
-            </button>
-          </>
         ) : (
           <>
             <h1 className="mt-2 text-center text-2xl font-semibold tracking-tight">

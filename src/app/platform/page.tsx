@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type {
   PlatformBusinessRow,
   PlatformFeature,
@@ -1427,7 +1428,16 @@ export default function PlatformPage() {
                                   {business.name}
                                 </p>
                                 <p className="mt-1 truncate text-xs text-zinc-600">
-                                  /b/{business.slug} · {business.owner_name}
+                                  <Link
+                                    aria-label={`Abrir página pública de ${business.name}`}
+                                    className="text-amber-300 hover:text-amber-200"
+                                    href={`/b/${business.slug}`}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                  >
+                                    /b/{business.slug} ↗
+                                  </Link>
+                                  <span> · {business.owner_name}</span>
                                 </p>
                               </div>
                             </div>

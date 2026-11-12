@@ -84,6 +84,60 @@ export interface BusinessAdminAccess {
   business_status: "setup" | "active" | "suspended";
 }
 
+export interface PublicBusinessService {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  price_cents: number;
+  duration_minutes: number;
+  direct_only: boolean;
+  direct_contact_url: string | null;
+  sort_order: number;
+  addons: Array<{ id: string; name: string; price_cents: number }>;
+  promotions: Array<{
+    label: string;
+    price_cents: number;
+    starts_at: string | null;
+    ends_at: string | null;
+  }>;
+}
+
+export interface PublicBusinessProfile {
+  id: string;
+  slug: string;
+  name: string;
+  whatsapp: string;
+  logo_url: string | null;
+  status: PlatformBusinessRow["status"];
+  services: PublicBusinessService[];
+  barbers: Array<{ id: string; name: string; photo_url: string | null }>;
+  hours: Array<{
+    barber_id: string | null;
+    weekday: number;
+    open_time: string;
+    close_time: string;
+  }>;
+  barber_services: Array<{ barber_id: string; service_id: string }>;
+}
+
+export interface BusinessScheduleRow {
+  weekday: number;
+  open_time: string;
+  close_time: string;
+}
+
+export interface BusinessServiceRow
+  extends Omit<PublicBusinessService, "promotions"> {
+  active: boolean;
+  promotions: Array<{
+    label: string;
+    price_cents: number;
+    starts_at: string | null;
+    ends_at: string | null;
+  }>;
+}
+
 interface SupabaseAuthUser {
   id: string;
   email: string;
@@ -128,10 +182,345 @@ async function platformDbRows<T>(
   return (await response.json()) as T[];
 }
 
+async function platformDbRpc<T>(
+  functionName: string,
+  parameters: Record<string, unknown>
+): Promise<T> {
+  const { url } = getSupabaseEnv();
+  const response = await fetch(`${url}/rest/v1/rpc/${functionName}`, {
+    method: "POST",
+    headers: buildHeaders(),
+    body: JSON.stringify(parameters),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Erro na operação da plataforma no Supabase: ${response.status} ${errorText}`
+    );
+  }
+  return (await response.json()) as T;
+}
+
 export async function dbGetPlatformPlans(): Promise<PlatformPlanRow[]> {
   return platformDbRows<PlatformPlanRow>(
     "platform_plans?select=*&order=sort_order.asc,name.asc"
   );
+}
+
+export async function dbGetBusinessSettings(businessId: string): Promise<{
+  hours: BusinessScheduleRow[];
+  services: BusinessServiceRow[];
+}> {
+  const encodedBusinessId = encodeURIComponent(businessId);
+  const [hours, services, addons, promotions] = await Promise.all([
+    platformDbRows<{
+      weekday: number;
+      open_time: string;
+      close_time: string;
+    }>(
+      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=is.null&select=weekday,open_time,close_time&order=weekday.asc`
+    ),
+    platformDbRows<Omit<BusinessServiceRow, "addons" | "promotions">>(
+      `business_services?business_id=eq.${encodedBusinessId}&select=id,name,description,category,price_cents,duration_minutes,direct_only,direct_contact_url,sort_order,active&order=sort_order.asc,name.asc`
+    ),
+    platformDbRows<{
+      id: string;
+      service_id: string;
+      name: string;
+      price_cents: number;
+      active: boolean;
+    }>(
+      `service_addons?business_id=eq.${encodedBusinessId}&select=id,service_id,name,price_cents,active&order=sort_order.asc,name.asc`
+    ),
+    platformDbRows<{
+      service_id: string;
+      label: string;
+      price_cents: number;
+      starts_at: string | null;
+      ends_at: string | null;
+      active: boolean;
+    }>(
+      `service_promotions?business_id=eq.${encodedBusinessId}&select=service_id,label,price_cents,starts_at,ends_at,active`
+    ),
+  ]);
+  return {
+    hours: hours.map((row) => ({
+      weekday: row.weekday,
+      open_time: normalizeDbTime(row.open_time),
+      close_time: normalizeDbTime(row.close_time),
+    })),
+    services: services.map((service) => ({
+      ...service,
+      addons: addons
+        .filter((addon) => addon.service_id === service.id && addon.active)
+        .map(({ id, name, price_cents }) => ({ id, name, price_cents })),
+      promotions: promotions
+        .filter(
+          (promotion) =>
+            promotion.service_id === service.id && promotion.active
+        )
+        .map(({ label, price_cents, starts_at, ends_at }) => ({
+          label,
+          price_cents,
+          starts_at,
+          ends_at,
+        })),
+    })),
+  };
+}
+
+export async function dbSaveBusinessSchedule(
+  businessId: string,
+  hours: BusinessScheduleRow[]
+): Promise<void> {
+  await platformDbRpc<number>("replace_business_schedule", {
+    p_business_id: businessId,
+    p_hours: hours,
+  });
+}
+
+export async function dbSaveBusinessService(input: {
+  businessId: string;
+  serviceId: string | null;
+  service: {
+    name: string;
+    description: string;
+    category: string;
+    price_cents: number;
+    duration_minutes: number;
+    direct_only: boolean;
+    direct_contact_url: string | null;
+    active: boolean;
+  };
+  addons: Array<{ name: string; price_cents: number }>;
+  promotion: {
+    label: string;
+    price_cents: number;
+    starts_at: string | null;
+    ends_at: string | null;
+  } | null;
+}): Promise<string> {
+  return platformDbRpc<string>("save_business_service", {
+    p_business_id: input.businessId,
+    p_service_id: input.serviceId,
+    p_service: input.service,
+    p_addons: input.addons,
+    p_promotion: input.promotion,
+  });
+}
+
+export async function dbDeactivateBusinessService(
+  businessId: string,
+  serviceId: string
+): Promise<boolean> {
+  const rows = await platformDbRows<{ id: string }>(
+    `business_services?id=eq.${encodeURIComponent(serviceId)}&business_id=eq.${encodeURIComponent(businessId)}&active=eq.true&select=id`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ active: false }),
+    }
+  );
+  return Boolean(rows[0]);
+}
+
+export async function dbGetPublicBusinessBySlug(
+  slug: string
+): Promise<PublicBusinessProfile | null> {
+  const businesses = await platformDbRows<{
+    id: string;
+    slug: string;
+    name: string;
+    whatsapp: string;
+    logo_url: string | null;
+    status: PlatformBusinessRow["status"];
+  }>(
+    `businesses?slug=eq.${encodeURIComponent(slug)}&select=id,slug,name,whatsapp,logo_url,status&limit=1`
+  );
+  const business = businesses[0];
+  if (!business) return null;
+
+  const businessId = encodeURIComponent(business.id);
+  const [serviceRows, addonRows, promotionRows, barbers, hours, barberServices] =
+    await Promise.all([
+      platformDbRows<Omit<PublicBusinessService, "addons" | "promotions">>(
+        `business_services?business_id=eq.${businessId}&active=eq.true&select=id,name,description,category,price_cents,duration_minutes,direct_only,direct_contact_url,sort_order&order=sort_order.asc,name.asc`
+      ),
+      platformDbRows<{
+        id: string;
+        service_id: string;
+        name: string;
+        price_cents: number;
+      }>(
+        `service_addons?business_id=eq.${businessId}&active=eq.true&select=id,service_id,name,price_cents&order=sort_order.asc,name.asc`
+      ),
+      platformDbRows<{
+        service_id: string;
+        label: string;
+        price_cents: number;
+        starts_at: string | null;
+        ends_at: string | null;
+      }>(
+        `service_promotions?business_id=eq.${businessId}&active=eq.true&select=service_id,label,price_cents,starts_at,ends_at`
+      ),
+      platformDbRows<{
+        id: string;
+        name: string;
+        photo_url: string | null;
+      }>(
+        `barbers?business_id=eq.${businessId}&active=eq.true&select=id,name,photo_url&order=sort_order.asc,name.asc`
+      ),
+      platformDbRows<{
+        barber_id: string | null;
+        weekday: number;
+        open_time: string;
+        close_time: string;
+      }>(
+        `business_hours?business_id=eq.${businessId}&select=barber_id,weekday,open_time,close_time&order=weekday.asc,sort_order.asc`
+      ),
+      platformDbRows<{ barber_id: string; service_id: string }>(
+        `barber_services?business_id=eq.${businessId}&select=barber_id,service_id`
+      ),
+    ]);
+
+  return {
+    ...business,
+    services: serviceRows.map((service) => ({
+      ...service,
+      addons: addonRows
+        .filter((addon) => addon.service_id === service.id)
+        .map(({ id, name, price_cents }) => ({ id, name, price_cents })),
+      promotions: promotionRows
+        .filter((promotion) => promotion.service_id === service.id)
+        .map(({ label, price_cents, starts_at, ends_at }) => ({
+          label,
+          price_cents,
+          starts_at,
+          ends_at,
+        })),
+    })),
+    barbers,
+    hours: hours.map((hour) => ({
+      ...hour,
+      open_time: normalizeDbTime(hour.open_time),
+      close_time: normalizeDbTime(hour.close_time),
+    })),
+    barber_services: barberServices,
+  };
+}
+
+export async function dbGetPublicBookingState(
+  businessId: string,
+  date: string
+): Promise<{
+  appointments: Array<{
+    time: string;
+    barber_id: string | null;
+    service_id: string | null;
+  }>;
+  blocked_slots: Array<{ time: string; barber_id: string | null }>;
+}> {
+  const encodedBusinessId = encodeURIComponent(businessId);
+  const [appointments, blockedSlots] = await Promise.all([
+    platformDbRows<{
+      time: string;
+      barber_id: string | null;
+      service_id: string | null;
+    }>(
+      `appointments?business_id=eq.${encodedBusinessId}&date=eq.${encodeURIComponent(date)}&status=eq.scheduled&select=time,barber_id,service_id`
+    ),
+    platformDbRows<{ time: string; barber_id: string | null }>(
+      `blocked_slots?business_id=eq.${encodedBusinessId}&date=eq.${encodeURIComponent(date)}&select=time,barber_id`
+    ),
+  ]);
+  return {
+    appointments: appointments.map((item) => ({
+      ...item,
+      time: normalizeDbTime(item.time),
+    })),
+    blocked_slots: blockedSlots.map((item) => ({
+      ...item,
+      time: normalizeDbTime(item.time),
+    })),
+  };
+}
+
+export async function dbCountBusinessClientWeekAppointments(
+  businessId: string,
+  phone: string,
+  monday: string,
+  sunday: string
+): Promise<number> {
+  const rows = await platformDbRows<{ id: number }>(
+    `appointments?business_id=eq.${encodeURIComponent(businessId)}&phone=eq.${encodeURIComponent(phone)}&and=(date.gte.${encodeURIComponent(monday)},date.lte.${encodeURIComponent(sunday)})&status=eq.scheduled&select=id`
+  );
+  return rows.length;
+}
+
+export async function dbCreatePublicAppointment(input: {
+  businessId: string;
+  phone: string;
+  name: string;
+  serviceId: string;
+  serviceName: string;
+  barberId: string | null;
+  date: string;
+  time: string;
+  priceCents: number;
+}): Promise<{ ok: true; id: number } | { ok: false }> {
+  const { url } = getSupabaseEnv();
+  const clientResponse = await fetch(
+    `${url}/rest/v1/clients?on_conflict=business_id,phone`,
+    {
+      method: "POST",
+      headers: buildHeaders({
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      }),
+      body: JSON.stringify({
+        business_id: input.businessId,
+        phone: input.phone,
+        name: input.name,
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!clientResponse.ok) {
+    const errorText = await clientResponse.text();
+    throw new Error(
+      `Erro ao salvar cliente da barbearia: ${clientResponse.status} ${errorText}`
+    );
+  }
+
+  const response = await fetch(
+    `${url}/rest/v1/appointments`,
+    {
+      method: "POST",
+      headers: buildHeaders({ Prefer: "return=representation" }),
+      body: JSON.stringify({
+        business_id: input.businessId,
+        phone: input.phone,
+        service_id: input.serviceId,
+        service: input.serviceName,
+        barber_id: input.barberId,
+        date: input.date,
+        time: input.time,
+        price_cents: input.priceCents,
+      }),
+    }
+  );
+  if (response.status === 409) return { ok: false };
+  if (!response.ok) {
+    const error = (await response.json().catch(() => ({}))) as {
+      code?: string;
+    };
+    if (error.code === "23505") return { ok: false };
+    throw new Error(`Erro ao registrar agendamento: ${response.status}`);
+  }
+  const rows = (await response.json()) as Array<{ id: number }>;
+  if (!rows[0]) {
+    throw new Error("O Supabase não retornou o agendamento criado.");
+  }
+  return { ok: true, id: rows[0].id };
 }
 
 export async function dbGetPlatformBusinesses(): Promise<PlatformBusinessRow[]> {
