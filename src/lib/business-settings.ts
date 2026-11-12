@@ -1,4 +1,4 @@
-import { sanitizeText } from "@/lib/domain";
+import { normalizePhone, sanitizeText } from "@/lib/domain";
 import {
   BusinessScheduleRow,
   BusinessServiceRow,
@@ -21,6 +21,18 @@ export interface BusinessServiceInput {
     ends_at: string | null;
   } | null;
 }
+
+export interface BusinessBarberInput {
+  name: string;
+  phone: string;
+  email: string;
+  photo_url: string | null;
+  service_ids: string[];
+  hours: BusinessScheduleRow[];
+}
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function parseBusinessSchedule(
   value: unknown
@@ -95,6 +107,7 @@ export function parseBusinessService(
   if (name.length < 2) {
     return { error: "O nome do serviço deve ter pelo menos 2 caracteres." };
   }
+
   if (
     typeof price !== "number" ||
     !Number.isInteger(price) ||
@@ -206,5 +219,76 @@ export function parseBusinessService(
     },
     addons,
     promotion,
+  };
+}
+
+export function parseBusinessBarber(
+  value: Record<string, unknown>
+):
+  | {
+      barber: Omit<BusinessBarberInput, "service_ids" | "hours">;
+      serviceIds: string[];
+      hours: BusinessScheduleRow[];
+      customHours: boolean;
+    }
+  | { error: string } {
+  const name = sanitizeText(value.name, 80);
+  const phone = normalizePhone(value.phone);
+  const email = sanitizeText(value.email, 120).toLowerCase();
+  const photoUrl =
+    typeof value.photo_url === "string" ? value.photo_url.trim() : "";
+  const customHours = value.custom_hours;
+
+  if (name.length < 2) {
+    return { error: "Informe o nome do barbeiro." };
+  }
+  if (phone && (phone.length < 10 || phone.length > 13)) {
+    return { error: "Informe um telefone com DDD válido." };
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { error: "Informe um e-mail válido." };
+  }
+  if (photoUrl) {
+    try {
+      const url = new URL(photoUrl);
+      if (url.protocol !== "https:" && url.protocol !== "http:") {
+        return { error: "A foto deve usar um endereço http:// ou https://." };
+      }
+    } catch {
+      return { error: "Informe um endereço válido para a foto." };
+    }
+  }
+  if (typeof customHours !== "boolean") {
+    return { error: "Informe se o barbeiro usará horários próprios." };
+  }
+
+  const rawServiceIds = value.service_ids;
+  if (
+    !Array.isArray(rawServiceIds) ||
+    rawServiceIds.length > 100 ||
+    rawServiceIds.some(
+      (id) => typeof id !== "string" || !UUID_PATTERN.test(id)
+    )
+  ) {
+    return { error: "A lista de serviços atribuídos é inválida." };
+  }
+  const serviceIds = rawServiceIds as string[];
+  if (new Set(serviceIds).size !== serviceIds.length) {
+    return { error: "Não repita serviços na lista do barbeiro." };
+  }
+
+  const schedule = parseBusinessSchedule(value.hours);
+  if ("error" in schedule) return schedule;
+
+  return {
+    barber: {
+      name,
+      phone,
+      email,
+      photo_url: photoUrl || null,
+    },
+    serviceIds,
+    hours: schedule.hours,
+    customHours,
   };
 }

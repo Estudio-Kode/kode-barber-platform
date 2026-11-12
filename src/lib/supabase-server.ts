@@ -111,7 +111,12 @@ export interface PublicBusinessProfile {
   logo_url: string | null;
   status: PlatformBusinessRow["status"];
   services: PublicBusinessService[];
-  barbers: Array<{ id: string; name: string; photo_url: string | null }>;
+  barbers: Array<{
+    id: string;
+    name: string;
+    photo_url: string | null;
+    custom_hours: boolean;
+  }>;
   hours: Array<{
     barber_id: string | null;
     weekday: number;
@@ -136,6 +141,26 @@ export interface BusinessServiceRow
     starts_at: string | null;
     ends_at: string | null;
   }>;
+}
+
+export interface BusinessBarberRow {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  photo_url: string | null;
+  active: boolean;
+  sort_order: number;
+  custom_hours: boolean;
+  service_ids: string[];
+  hours: BusinessScheduleRow[];
+}
+
+export interface BusinessTeamData {
+  barbers: BusinessBarberRow[];
+  services: Array<{ id: string; name: string; active: boolean }>;
+  max_barbers: number;
+  multiple_barbers_enabled: boolean;
 }
 
 interface SupabaseAuthUser {
@@ -324,6 +349,105 @@ export async function dbDeactivateBusinessService(
   return Boolean(rows[0]);
 }
 
+export async function dbGetBusinessTeam(
+  businessId: string
+): Promise<BusinessTeamData> {
+  const encodedBusinessId = encodeURIComponent(businessId);
+  const [barbers, services, assignments, hours, businesses] = await Promise.all([
+    platformDbRows<{
+      id: string;
+      name: string;
+      phone: string;
+      email: string;
+      photo_url: string | null;
+      active: boolean;
+      sort_order: number;
+      custom_hours: boolean;
+    }>(
+      `barbers?business_id=eq.${encodedBusinessId}&active=eq.true&select=id,name,phone,email,photo_url,active,sort_order,custom_hours&order=sort_order.asc,name.asc`
+    ),
+    platformDbRows<{ id: string; name: string; active: boolean }>(
+      `business_services?business_id=eq.${encodedBusinessId}&active=eq.true&select=id,name,active&order=sort_order.asc,name.asc`
+    ),
+    platformDbRows<{ barber_id: string; service_id: string }>(
+      `barber_services?business_id=eq.${encodedBusinessId}&select=barber_id,service_id`
+    ),
+    platformDbRows<{
+      barber_id: string;
+      weekday: number;
+      open_time: string;
+      close_time: string;
+    }>(
+      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=not.is.null&select=barber_id,weekday,open_time,close_time&order=weekday.asc`
+    ),
+    platformDbRows<{
+      platform_plans: {
+        max_barbers: number;
+        features: Record<string, boolean>;
+      };
+    }>(
+      `businesses?id=eq.${encodedBusinessId}&select=platform_plans(max_barbers,features)&limit=1`
+    ),
+  ]);
+  const plan = businesses[0]?.platform_plans;
+  if (!plan) throw new Error("Não foi possível carregar o plano da barbearia.");
+
+  return {
+    barbers: barbers.map((barber) => ({
+      ...barber,
+      service_ids: assignments
+        .filter((assignment) => assignment.barber_id === barber.id)
+        .map((assignment) => assignment.service_id),
+      hours: hours
+        .filter((schedule) => schedule.barber_id === barber.id)
+        .map(({ weekday, open_time, close_time }) => ({
+          weekday,
+          open_time: normalizeDbTime(open_time),
+          close_time: normalizeDbTime(close_time),
+        })),
+    })),
+    services,
+    max_barbers: plan.max_barbers,
+    multiple_barbers_enabled: plan.features?.multiple_barbers === true,
+  };
+}
+
+export async function dbSaveBusinessBarber(input: {
+  businessId: string;
+  barberId: string | null;
+  barber: {
+    name: string;
+    phone: string;
+    email: string;
+    photo_url: string | null;
+  };
+  customHours: boolean;
+  serviceIds: string[];
+  hours: BusinessScheduleRow[];
+}): Promise<string> {
+  return platformDbRpc<string>("save_business_barber", {
+    p_business_id: input.businessId,
+    p_barber_id: input.barberId,
+    p_barber: { ...input.barber, custom_hours: input.customHours },
+    p_service_ids: input.serviceIds,
+    p_hours: input.hours,
+  });
+}
+
+export async function dbDeactivateBusinessBarber(
+  businessId: string,
+  barberId: string
+): Promise<boolean> {
+  const rows = await platformDbRows<{ id: string }>(
+    `barbers?id=eq.${encodeURIComponent(barberId)}&business_id=eq.${encodeURIComponent(businessId)}&active=eq.true&select=id`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ active: false }),
+    }
+  );
+  return Boolean(rows[0]);
+}
+
 export async function dbGetPublicBusinessBySlug(
   slug: string
 ): Promise<PublicBusinessProfile | null> {
@@ -367,8 +491,9 @@ export async function dbGetPublicBusinessBySlug(
         id: string;
         name: string;
         photo_url: string | null;
+        custom_hours: boolean;
       }>(
-        `barbers?business_id=eq.${businessId}&active=eq.true&select=id,name,photo_url&order=sort_order.asc,name.asc`
+        `barbers?business_id=eq.${businessId}&active=eq.true&select=id,name,photo_url,custom_hours&order=sort_order.asc,name.asc`
       ),
       platformDbRows<{
         barber_id: string | null;

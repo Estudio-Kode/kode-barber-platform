@@ -2,15 +2,17 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import type {
+  BusinessBarberRow,
   BusinessScheduleRow,
   BusinessServiceRow,
+  BusinessTeamData,
 } from "@/lib/supabase-server";
 
 type SettingsData = {
   hours: BusinessScheduleRow[];
   services: BusinessServiceRow[];
 };
-type Section = "overview" | "agenda" | "services" | "hours";
+type Section = "overview" | "agenda" | "services" | "hours" | "team";
 type Appointment = {
   id: number;
   phone: string;
@@ -45,6 +47,15 @@ type ServiceDraft = {
   promotionEndsAt: string;
 };
 type ScheduleDay = { open: boolean; openTime: string; closeTime: string };
+type BarberDraft = {
+  name: string;
+  phone: string;
+  email: string;
+  photoUrl: string;
+  serviceIds: string[];
+  customHours: boolean;
+  days: Record<number, ScheduleDay>;
+};
 
 const WEEKDAYS = [
   "Segunda-feira",
@@ -186,6 +197,18 @@ function scheduleToDays(hours: BusinessScheduleRow[]): Record<number, ScheduleDa
   return days;
 }
 
+function emptyBarberDraft(): BarberDraft {
+  return {
+    name: "",
+    phone: "",
+    email: "",
+    photoUrl: "",
+    serviceIds: [],
+    customHours: false,
+    days: scheduleToDays([]),
+  };
+}
+
 export default function BusinessAdminDashboard({
   businessName,
   onLogout,
@@ -205,12 +228,21 @@ export default function BusinessAdminDashboard({
     hours: [],
     services: [],
   });
+  const [team, setTeam] = useState<BusinessTeamData | null>(null);
   const [days, setDays] = useState<Record<number, ScheduleDay>>(() =>
     scheduleToDays([])
   );
   const [draft, setDraft] = useState<ServiceDraft>(emptyDraft);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
+  const [barberDialogOpen, setBarberDialogOpen] = useState(false);
+  const [barberDraft, setBarberDraft] = useState<BarberDraft>(
+    emptyBarberDraft
+  );
+  const [editingBarberId, setEditingBarberId] = useState<string | null>(null);
+  const [savingBarber, setSavingBarber] = useState(false);
+  const [removingBarberId, setRemovingBarberId] = useState("");
+  const [loadingTeam, setLoadingTeam] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingHours, setSavingHours] = useState(false);
   const [savingService, setSavingService] = useState(false);
@@ -229,6 +261,16 @@ export default function BusinessAdminDashboard({
     const data = await requestJson<DashboardSummary>("/api/admin/summary");
     setSummary(data);
     setSelectedDate((current) => current || data.today);
+  }, []);
+
+  const loadTeam = useCallback(async () => {
+    setLoadingTeam(true);
+    try {
+      const data = await requestJson<BusinessTeamData>("/api/admin/barbers");
+      setTeam(data);
+    } finally {
+      setLoadingTeam(false);
+    }
   }, []);
 
   const loadAgenda = useCallback(async (date: string) => {
@@ -313,6 +355,15 @@ export default function BusinessAdminDashboard({
           loadError instanceof Error
             ? loadError.message
             : "Não foi possível carregar a agenda."
+        )
+      );
+    }
+    if (nextSection === "team") {
+      loadTeam().catch((loadError: unknown) =>
+        setError(
+          loadError instanceof Error
+            ? loadError.message
+            : "Não foi possível carregar a equipe."
         )
       );
     }
@@ -518,6 +569,99 @@ export default function BusinessAdminDashboard({
     }
   }
 
+  function openNewBarberDialog() {
+    setBarberDraft(emptyBarberDraft());
+    setEditingBarberId(null);
+    setFormError("");
+    setBarberDialogOpen(true);
+  }
+
+  function openEditBarberDialog(barber: BusinessBarberRow) {
+    const days = scheduleToDays(barber.hours);
+    setBarberDraft({
+      name: barber.name,
+      phone: barber.phone,
+      email: barber.email,
+      photoUrl: barber.photo_url || "",
+      serviceIds: barber.service_ids,
+      customHours: barber.custom_hours,
+      days,
+    });
+    setEditingBarberId(barber.id);
+    setFormError("");
+    setBarberDialogOpen(true);
+  }
+
+  async function saveBarber(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setFormError("");
+    const hours = barberDraft.customHours
+      ? Object.entries(barberDraft.days)
+          .filter(([, day]) => day.open)
+          .map(([weekday, day]) => ({
+            weekday: Number(weekday),
+            open_time: day.openTime,
+            close_time: day.closeTime,
+          }))
+      : [];
+    setSavingBarber(true);
+    try {
+      await requestJson(
+        editingBarberId
+          ? `/api/admin/barbers/${editingBarberId}`
+          : "/api/admin/barbers",
+        editingBarberId ? "PUT" : "POST",
+        {
+          name: barberDraft.name,
+          phone: barberDraft.phone,
+          email: barberDraft.email,
+          photo_url: barberDraft.photoUrl,
+          service_ids: barberDraft.serviceIds,
+          custom_hours: barberDraft.customHours,
+          hours,
+        }
+      );
+      await loadTeam();
+      setBarberDialogOpen(false);
+      showNotice(
+        editingBarberId ? "Barbeiro atualizado." : "Barbeiro adicionado."
+      );
+    } catch (saveError) {
+      setFormError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar o barbeiro."
+      );
+    } finally {
+      setSavingBarber(false);
+    }
+  }
+
+  async function removeBarber(barber: BusinessBarberRow) {
+    if (
+      !window.confirm(
+        `Remover ${barber.name} da equipe? Agendamentos antigos serão preservados.`
+      )
+    ) {
+      return;
+    }
+    setRemovingBarberId(barber.id);
+    setError("");
+    try {
+      await requestJson(`/api/admin/barbers/${barber.id}`, "DELETE");
+      await loadTeam();
+      showNotice("Barbeiro removido da equipe.");
+    } catch (removeError) {
+      setError(
+        removeError instanceof Error
+          ? removeError.message
+          : "Não foi possível remover o barbeiro."
+      );
+    } finally {
+      setRemovingBarberId("");
+    }
+  }
+
   function updateDraft<Key extends keyof ServiceDraft>(
     key: Key,
     value: ServiceDraft[Key]
@@ -547,6 +691,7 @@ export default function BusinessAdminDashboard({
                 ["agenda", "Agenda"],
                 ["services", "Serviços"],
                 ["hours", "Funcionamento"],
+                ["team", "Equipe"],
               ] as Array<[Section, string]>
             ).map(([key, title]) => (
               <button
@@ -598,6 +743,7 @@ export default function BusinessAdminDashboard({
                 ["agenda", "Agenda"],
                 ["services", "Serviços"],
                 ["hours", "Funcionamento"],
+                ["team", "Equipe"],
               ] as Array<[Section, string]>
             ).map(([key, title]) => (
               <button
@@ -627,7 +773,9 @@ export default function BusinessAdminDashboard({
                     ? "Agenda"
                   : section === "services"
                     ? "Serviços"
-                    : "Funcionamento"}
+                    : section === "hours"
+                      ? "Funcionamento"
+                      : "Equipe"}
               </h2>
               <p className="mt-2 text-sm text-zinc-500">
                 {section === "overview"
@@ -636,7 +784,9 @@ export default function BusinessAdminDashboard({
                     ? "Consulte e atualize os agendamentos desta barbearia."
                   : section === "services"
                     ? "Defina preços, adicionais, promoções e formas de agendamento."
-                    : "Configure individualmente os dias e horários de atendimento."}
+                    : section === "hours"
+                      ? "Configure os dias e horários gerais de atendimento."
+                      : "Cadastre barbeiros, vincule serviços e personalize os horários da equipe."}
               </p>
             </div>
 
@@ -915,6 +1065,143 @@ export default function BusinessAdminDashboard({
                   </div>
                 )}
               </section>
+            ) : section === "team" ? (
+              loadingTeam ? (
+                <div className="rounded-2xl border border-white/7 bg-[#111318] p-6 text-sm text-zinc-400">
+                  Carregando equipe...
+                </div>
+              ) : !team ? (
+                <div className="rounded-2xl border border-white/7 bg-[#111318] p-6">
+                  <p className="text-sm text-zinc-400">
+                    Não foi possível carregar a equipe. Confirme se a migração
+                    de gestão de barbeiros foi aplicada e tente novamente.
+                  </p>
+                  <button
+                    className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:text-white"
+                    onClick={() => {
+                      setError("");
+                      loadTeam().catch((loadError: unknown) =>
+                        setError(
+                          loadError instanceof Error
+                            ? loadError.message
+                            : "Não foi possível carregar a equipe."
+                        )
+                      );
+                    }}
+                    type="button"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : (
+                <section>
+                  <div className="mb-5 flex flex-wrap items-end justify-between gap-4 rounded-2xl border border-white/7 bg-[#111318] p-5">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">
+                        Equipe da barbearia
+                      </h3>
+                      <p className="mt-1 text-xs text-zinc-500">
+                        {team.barbers.length} de {team.max_barbers} barbeiros
+                        no plano atual.
+                      </p>
+                    </div>
+                    <button
+                      className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={
+                        team.barbers.length >= team.max_barbers ||
+                        (team.barbers.length > 0 &&
+                          !team.multiple_barbers_enabled)
+                      }
+                      onClick={openNewBarberDialog}
+                      type="button"
+                    >
+                      + Adicionar barbeiro
+                    </button>
+                  </div>
+                  {team.barbers.length >= team.max_barbers && (
+                    <p className="mb-4 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-4 py-3 text-xs leading-5 text-amber-100">
+                      O limite de barbeiros do plano foi atingido. Para ampliar
+                      a equipe, altere o plano pela central da plataforma.
+                    </p>
+                  )}
+                  {team.barbers.length > 0 &&
+                    !team.multiple_barbers_enabled &&
+                    team.barbers.length < team.max_barbers && (
+                      <p className="mb-4 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] px-4 py-3 text-xs leading-5 text-amber-100">
+                        O plano atual não inclui múltiplos barbeiros.
+                      </p>
+                    )}
+                  <div className="grid gap-3">
+                    {team.barbers.map((barber) => {
+                      const assignedServices = team.services.filter((service) =>
+                        barber.service_ids.includes(service.id)
+                      );
+                      return (
+                        <article
+                          className="rounded-2xl border border-white/7 bg-[#111318] p-5"
+                          key={barber.id}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-4">
+                            <div>
+                              <h4 className="font-semibold text-white">
+                                {barber.name}
+                              </h4>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {[barber.phone, barber.email]
+                                  .filter(Boolean)
+                                  .join(" · ") || "Sem telefone ou e-mail"}
+                              </p>
+                              <p className="mt-2 text-xs text-zinc-400">
+                                Serviços:{" "}
+                                {assignedServices.length
+                                  ? assignedServices
+                                      .map((service) => service.name)
+                                      .join(", ")
+                                  : "todos os serviços não atribuídos"}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {barber.custom_hours
+                                  ? `${barber.hours.length} dias com horário próprio`
+                                  : "Usa o funcionamento geral"}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                className="rounded-lg border border-white/8 px-3 py-2 text-xs text-zinc-300 hover:text-white"
+                                onClick={() => openEditBarberDialog(barber)}
+                                type="button"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                className="rounded-lg border border-rose-300/15 px-3 py-2 text-xs text-rose-200 hover:bg-rose-300/[0.06] disabled:opacity-50"
+                                disabled={removingBarberId === barber.id}
+                                onClick={() => removeBarber(barber)}
+                                type="button"
+                              >
+                                {removingBarberId === barber.id
+                                  ? "Removendo..."
+                                  : "Remover"}
+                              </button>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                    {team.barbers.length === 0 && (
+                      <div className="rounded-2xl border border-dashed border-white/10 px-6 py-10 text-center">
+                        <p className="text-sm font-medium text-zinc-300">
+                          Nenhum barbeiro cadastrado
+                        </p>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Adicione a equipe para habilitar a escolha de
+                          barbeiro nos agendamentos.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </section>
+              )
             ) : section === "hours" ? (
               <form
                 className="rounded-2xl border border-white/7 bg-[#111318] p-5 sm:p-7"
@@ -1414,6 +1701,292 @@ export default function BusinessAdminDashboard({
                     : editingServiceId
                       ? "Salvar alterações"
                       : "Cadastrar serviço"}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+      {barberDialogOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !savingBarber) {
+              setBarberDialogOpen(false);
+            }
+          }}
+        >
+          <section
+            aria-labelledby="barber-dialog-title"
+            aria-modal="true"
+            className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-white/10 bg-[#101216] p-6 shadow-2xl sm:p-8"
+            role="dialog"
+          >
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
+                  Equipe da barbearia
+                </p>
+                <h2
+                  className="mt-2 text-2xl font-semibold tracking-tight text-white"
+                  id="barber-dialog-title"
+                >
+                  {editingBarberId ? "Editar barbeiro" : "Novo barbeiro"}
+                </h2>
+              </div>
+              <button
+                aria-label="Fechar formulário"
+                className="rounded-lg px-2 py-1 text-xl text-zinc-500 hover:text-white"
+                onClick={() => setBarberDialogOpen(false)}
+                type="button"
+              >
+                ×
+              </button>
+            </div>
+            <form className="space-y-5" onSubmit={saveBarber}>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className={labelClass}>
+                  Nome
+                  <input
+                    autoComplete="name"
+                    className={inputClass}
+                    maxLength={80}
+                    onChange={(event) =>
+                      setBarberDraft((current) => ({
+                        ...current,
+                        name: event.target.value,
+                      }))
+                    }
+                    required
+                    value={barberDraft.name}
+                  />
+                </label>
+                <label className={labelClass}>
+                  Telefone
+                  <input
+                    autoComplete="tel"
+                    className={inputClass}
+                    maxLength={20}
+                    onChange={(event) =>
+                      setBarberDraft((current) => ({
+                        ...current,
+                        phone: event.target.value,
+                      }))
+                    }
+                    type="tel"
+                    value={barberDraft.phone}
+                  />
+                </label>
+                <label className={labelClass}>
+                  E-mail
+                  <input
+                    autoComplete="email"
+                    className={inputClass}
+                    maxLength={120}
+                    onChange={(event) =>
+                      setBarberDraft((current) => ({
+                        ...current,
+                        email: event.target.value,
+                      }))
+                    }
+                    type="email"
+                    value={barberDraft.email}
+                  />
+                </label>
+                <label className={labelClass}>
+                  URL da foto <span className="font-normal text-zinc-500">· opcional</span>
+                  <input
+                    className={inputClass}
+                    onChange={(event) =>
+                      setBarberDraft((current) => ({
+                        ...current,
+                        photoUrl: event.target.value,
+                      }))
+                    }
+                    placeholder="https://..."
+                    type="url"
+                    value={barberDraft.photoUrl}
+                  />
+                </label>
+              </div>
+
+              <fieldset className="rounded-xl border border-white/8 p-4">
+                <legend className="px-1 text-sm font-medium text-zinc-300">
+                  Serviços realizados
+                </legend>
+                {settings.services.filter((service) => service.active).length ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {settings.services
+                      .filter((service) => service.active)
+                      .map((service) => (
+                        <label
+                          className="flex items-center gap-3 rounded-lg px-2 py-2 text-sm text-zinc-300 hover:bg-white/[0.03]"
+                          key={service.id}
+                        >
+                          <input
+                            checked={barberDraft.serviceIds.includes(service.id)}
+                            className="h-4 w-4 accent-amber-400"
+                            onChange={(event) =>
+                              setBarberDraft((current) => ({
+                                ...current,
+                                serviceIds: event.target.checked
+                                  ? [...current.serviceIds, service.id]
+                                  : current.serviceIds.filter(
+                                      (id) => id !== service.id
+                                    ),
+                              }))
+                            }
+                            type="checkbox"
+                          />
+                          {service.name}
+                        </label>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    Cadastre serviços antes de atribuí-los à equipe.
+                  </p>
+                )}
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  Se nenhum barbeiro for atribuído a um serviço, todos poderão
+                  atendê-lo.
+                </p>
+              </fieldset>
+
+              <fieldset className="rounded-xl border border-white/8 p-4">
+                <legend className="px-1 text-sm font-medium text-zinc-300">
+                  Horários
+                </legend>
+                <label className="flex items-start gap-3 text-sm text-zinc-300">
+                  <input
+                    checked={barberDraft.customHours}
+                    className="mt-0.5 accent-amber-400"
+                    onChange={(event) =>
+                      setBarberDraft((current) => ({
+                        ...current,
+                        customHours: event.target.checked,
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  <span>
+                    Definir horários próprios
+                    <span className="mt-1 block text-xs text-zinc-500">
+                      Desmarcado: o barbeiro segue o funcionamento geral.
+                      Marcado: somente os dias e horários abaixo ficam
+                      disponíveis.
+                    </span>
+                  </span>
+                </label>
+                {barberDraft.customHours && (
+                  <div className="mt-3 divide-y divide-white/6">
+                    {WEEKDAYS.map((weekdayName, weekday) => {
+                      const day = barberDraft.days[weekday];
+                      return (
+                        <div
+                          className="grid gap-3 py-3 sm:grid-cols-[minmax(150px,1fr)_1fr_1fr] sm:items-end"
+                          key={weekdayName}
+                        >
+                          <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-200">
+                            <input
+                              checked={day.open}
+                              className="h-4 w-4 accent-amber-400"
+                              onChange={(event) =>
+                                setBarberDraft((current) => ({
+                                  ...current,
+                                  days: {
+                                    ...current.days,
+                                    [weekday]: {
+                                      ...current.days[weekday],
+                                      open: event.target.checked,
+                                    },
+                                  },
+                                }))
+                              }
+                              type="checkbox"
+                            />
+                            {weekdayName}
+                          </label>
+                          <label
+                            className={`${labelClass} ${day.open ? "" : "opacity-40"}`}
+                          >
+                            Abre
+                            <input
+                              className={inputClass}
+                              disabled={!day.open}
+                              onChange={(event) =>
+                                setBarberDraft((current) => ({
+                                  ...current,
+                                  days: {
+                                    ...current.days,
+                                    [weekday]: {
+                                      ...current.days[weekday],
+                                      openTime: event.target.value,
+                                    },
+                                  },
+                                }))
+                              }
+                              required={day.open}
+                              type="time"
+                              value={day.openTime}
+                            />
+                          </label>
+                          <label
+                            className={`${labelClass} ${day.open ? "" : "opacity-40"}`}
+                          >
+                            Fecha
+                            <input
+                              className={inputClass}
+                              disabled={!day.open}
+                              onChange={(event) =>
+                                setBarberDraft((current) => ({
+                                  ...current,
+                                  days: {
+                                    ...current.days,
+                                    [weekday]: {
+                                      ...current.days[weekday],
+                                      closeTime: event.target.value,
+                                    },
+                                  },
+                                }))
+                              }
+                              required={day.open}
+                              type="time"
+                              value={day.closeTime}
+                            />
+                          </label>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </fieldset>
+
+              {formError && (
+                <p className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3.5 py-3 text-sm text-rose-300">
+                  {formError}
+                </p>
+              )}
+              <div className="flex justify-end gap-3 border-t border-white/8 pt-5">
+                <button
+                  className="rounded-xl px-4 py-2.5 text-sm font-medium text-zinc-400 hover:bg-white/5 hover:text-white"
+                  disabled={savingBarber}
+                  onClick={() => setBarberDialogOpen(false)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={savingBarber}
+                  type="submit"
+                >
+                  {savingBarber
+                    ? "Salvando..."
+                    : editingBarberId
+                      ? "Salvar alterações"
+                      : "Cadastrar barbeiro"}
                 </button>
               </div>
             </form>

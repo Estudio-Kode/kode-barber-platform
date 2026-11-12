@@ -113,6 +113,7 @@ export function getPublicAvailableTimes(
   if (date < today || date > toIsoDate(maxDate)) return [];
 
   const weekday = pyWeekday(parsedDate);
+  const selectedBarber = profile.barbers.find((barber) => barber.id === barberId);
   const barberHours =
     barberId === null
       ? []
@@ -122,7 +123,7 @@ export function getPublicAvailableTimes(
         );
   // Barbeiro-specific hours replace the business-wide hours for that weekday.
   const hoursForDay =
-    barberHours.length > 0
+    selectedBarber?.custom_hours
       ? barberHours
       : profile.hours.filter(
           (hours) => hours.barber_id === null && hours.weekday === weekday
