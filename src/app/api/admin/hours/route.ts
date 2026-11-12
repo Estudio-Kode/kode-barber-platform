@@ -30,7 +30,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "Não foi possível salvar os horários. Confirme se a migração de configurações foi aplicada.",
+          "Não foi possível salvar os horários. Confirme se as migrações de configurações e horários exatos foram aplicadas.",
       },
       { status: 503 }
     );

@@ -122,14 +122,16 @@ export interface PublicBusinessProfile {
     weekday: number;
     open_time: string;
     close_time: string;
+    slot_interval_minutes: number;
+    available_times: string[];
   }>;
   barber_services: Array<{ barber_id: string; service_id: string }>;
 }
 
 export interface BusinessScheduleRow {
   weekday: number;
-  open_time: string;
-  close_time: string;
+  slot_interval_minutes: number;
+  available_times: string[];
 }
 
 export interface BusinessServiceRow
@@ -243,8 +245,10 @@ export async function dbGetBusinessSettings(businessId: string): Promise<{
       weekday: number;
       open_time: string;
       close_time: string;
+      slot_interval_minutes: number;
+      available_times: string[];
     }>(
-      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=is.null&select=weekday,open_time,close_time&order=weekday.asc`
+      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=is.null&select=weekday,open_time,close_time,slot_interval_minutes,available_times&order=weekday.asc`
     ),
     platformDbRows<Omit<BusinessServiceRow, "addons" | "promotions">>(
       `business_services?business_id=eq.${encodedBusinessId}&select=id,name,description,category,price_cents,duration_minutes,direct_only,direct_contact_url,sort_order,active&order=sort_order.asc,name.asc`
@@ -272,8 +276,8 @@ export async function dbGetBusinessSettings(businessId: string): Promise<{
   return {
     hours: hours.map((row) => ({
       weekday: row.weekday,
-      open_time: normalizeDbTime(row.open_time),
-      close_time: normalizeDbTime(row.close_time),
+      slot_interval_minutes: row.slot_interval_minutes,
+      available_times: row.available_times.map(normalizeDbTime),
     })),
     services: services.map((service) => ({
       ...service,
@@ -377,8 +381,10 @@ export async function dbGetBusinessTeam(
       weekday: number;
       open_time: string;
       close_time: string;
+      slot_interval_minutes: number;
+      available_times: string[];
     }>(
-      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=not.is.null&select=barber_id,weekday,open_time,close_time&order=weekday.asc`
+      `business_hours?business_id=eq.${encodedBusinessId}&barber_id=not.is.null&select=barber_id,weekday,open_time,close_time,slot_interval_minutes,available_times&order=weekday.asc`
     ),
     platformDbRows<{
       platform_plans: {
@@ -400,10 +406,10 @@ export async function dbGetBusinessTeam(
         .map((assignment) => assignment.service_id),
       hours: hours
         .filter((schedule) => schedule.barber_id === barber.id)
-        .map(({ weekday, open_time, close_time }) => ({
+        .map(({ weekday, slot_interval_minutes, available_times }) => ({
           weekday,
-          open_time: normalizeDbTime(open_time),
-          close_time: normalizeDbTime(close_time),
+          slot_interval_minutes,
+          available_times: available_times.map(normalizeDbTime),
         })),
     })),
     services,
@@ -500,8 +506,10 @@ export async function dbGetPublicBusinessBySlug(
         weekday: number;
         open_time: string;
         close_time: string;
+        slot_interval_minutes: number;
+        available_times: string[];
       }>(
-        `business_hours?business_id=eq.${businessId}&select=barber_id,weekday,open_time,close_time&order=weekday.asc,sort_order.asc`
+        `business_hours?business_id=eq.${businessId}&select=barber_id,weekday,open_time,close_time,slot_interval_minutes,available_times&order=weekday.asc,sort_order.asc`
       ),
       platformDbRows<{ barber_id: string; service_id: string }>(
         `barber_services?business_id=eq.${businessId}&select=barber_id,service_id`
@@ -529,6 +537,7 @@ export async function dbGetPublicBusinessBySlug(
       ...hour,
       open_time: normalizeDbTime(hour.open_time),
       close_time: normalizeDbTime(hour.close_time),
+      available_times: hour.available_times.map(normalizeDbTime),
     })),
     barber_services: barberServices,
   };

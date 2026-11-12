@@ -49,8 +49,8 @@ export function parseBusinessSchedule(
     }
     const row = item as Record<string, unknown>;
     const weekday = row.weekday;
-    const openTime = row.open_time;
-    const closeTime = row.close_time;
+    const interval = row.slot_interval_minutes;
+    const rawTimes = row.available_times;
     if (
       typeof weekday !== "number" ||
       !Number.isInteger(weekday) ||
@@ -61,22 +61,40 @@ export function parseBusinessSchedule(
       return { error: "Cada dia da semana deve aparecer apenas uma vez." };
     }
     if (
-      typeof openTime !== "string" ||
-      typeof closeTime !== "string" ||
-      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(openTime) ||
-      !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(closeTime) ||
-      openTime >= closeTime
+      typeof interval !== "number" ||
+      ![15, 30, 60].includes(interval) ||
+      !Array.isArray(rawTimes) ||
+      rawTimes.length === 0 ||
+      rawTimes.length > 96 ||
+      rawTimes.some(
+        (time) =>
+          typeof time !== "string" ||
+          !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ||
+          timeToMinutes(time) % interval !== 0
+      )
     ) {
-      return { error: "Confira o horário de abertura e fechamento de cada dia." };
+      return {
+        error:
+          "Informe ao menos um horário válido para cada dia, respeitando o intervalo escolhido.",
+      };
+    }
+    const times = rawTimes as string[];
+    if (new Set(times).size !== times.length) {
+      return { error: "Não repita horários no mesmo dia." };
     }
     weekdays.add(weekday);
     hours.push({
       weekday,
-      open_time: openTime,
-      close_time: closeTime,
+      slot_interval_minutes: interval,
+      available_times: [...times].sort(),
     });
   }
   return { hours: hours.sort((a, b) => a.weekday - b.weekday) };
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
 }
 
 function isOptionalIsoDate(value: unknown): value is string | null {

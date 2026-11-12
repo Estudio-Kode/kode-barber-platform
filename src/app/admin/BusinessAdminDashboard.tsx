@@ -1,6 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Dispatch,
+  FormEvent,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import type {
   BusinessBarberRow,
   BusinessScheduleRow,
@@ -46,7 +54,11 @@ type ServiceDraft = {
   promotionStartsAt: string;
   promotionEndsAt: string;
 };
-type ScheduleDay = { open: boolean; openTime: string; closeTime: string };
+type ScheduleDay = {
+  open: boolean;
+  intervalMinutes: number;
+  times: string[];
+};
 type BarberDraft = {
   name: string;
   phone: string;
@@ -182,19 +194,368 @@ function serviceToDraft(service: BusinessServiceRow): ServiceDraft {
   };
 }
 
-function scheduleToDays(hours: BusinessScheduleRow[]): Record<number, ScheduleDay> {
+function scheduleToDays(
+  hours: BusinessScheduleRow[]
+): Record<number, ScheduleDay> {
   const days: Record<number, ScheduleDay> = {};
   for (let weekday = 0; weekday < 7; weekday += 1) {
     const saved = hours.find((item) => item.weekday === weekday);
     days[weekday] = saved
       ? {
           open: true,
-          openTime: saved.open_time,
-          closeTime: saved.close_time,
+          intervalMinutes: saved.slot_interval_minutes,
+          times: saved.available_times,
         }
-      : { open: false, openTime: "09:00", closeTime: "18:00" };
+      : { open: false, intervalMinutes: 30, times: [] };
   }
   return days;
+}
+
+function timeToMinutes(value: string): number {
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function ScheduleEditor({
+  days,
+  setDays,
+}: {
+  days: Record<number, ScheduleDay>;
+  setDays: Dispatch<SetStateAction<Record<number, ScheduleDay>>>;
+}) {
+  const [templateInterval, setTemplateInterval] = useState(30);
+  const [templateTimes, setTemplateTimes] = useState<string[]>([]);
+  const [templateTimeInput, setTemplateTimeInput] = useState("");
+  const [templateWeekdays, setTemplateWeekdays] = useState<number[]>([]);
+  const [dailyTimeInputs, setDailyTimeInputs] = useState<
+    Record<number, string>
+  >({});
+  const [message, setMessage] = useState("");
+
+  function addTime(
+    time: string,
+    interval: number,
+    current: string[],
+    onSuccess: (next: string[]) => void
+  ) {
+    setMessage("");
+    if (!time) {
+      setMessage("Escolha um horário antes de adicioná-lo.");
+      return;
+    }
+    if (timeToMinutes(time) % interval !== 0) {
+      setMessage(
+        `Esse horário não segue o intervalo de ${interval} minutos escolhido.`
+      );
+      return;
+    }
+    if (current.includes(time)) {
+      setMessage("Esse horário já está na lista.");
+      return;
+    }
+    onSuccess([...current, time].sort());
+  }
+
+  function applyTemplate() {
+    setMessage("");
+    if (templateWeekdays.length === 0 || templateTimes.length === 0) {
+      setMessage("Escolha ao menos um dia e adicione horários ao modelo.");
+      return;
+    }
+    if (templateTimes.some((time) => timeToMinutes(time) % templateInterval)) {
+      setMessage(
+        "Ajuste o intervalo do modelo ou os horários para que sejam compatíveis."
+      );
+      return;
+    }
+    const conflictingDays = templateWeekdays.filter(
+      (weekday) => days[weekday].open && days[weekday].times.length > 0
+    );
+    if (
+      conflictingDays.length > 0 &&
+      !window.confirm(
+        `Já existem horários para ${conflictingDays
+          .map((weekday) => WEEKDAYS[weekday])
+          .join(", ")}. Deseja sobrescrevê-los?`
+      )
+    ) {
+      return;
+    }
+
+    setDays((current) => {
+      const next = { ...current };
+      for (const weekday of templateWeekdays) {
+        next[weekday] = {
+          open: true,
+          intervalMinutes: templateInterval,
+          times: [...templateTimes],
+        };
+      }
+      return next;
+    });
+    setMessage("Horários aplicados aos dias selecionados.");
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="rounded-xl border border-amber-300/15 bg-amber-300/[0.04] p-4">
+        <h4 className="text-sm font-semibold text-amber-100">
+          Repetir um modelo em vários dias
+        </h4>
+        <p className="mt-1 text-xs leading-5 text-zinc-500">
+          Escolha a granularidade dos horários, adicione os horários exatos e
+          aplique o modelo aos dias desejados.
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[180px_1fr_auto] sm:items-end">
+          <label className={labelClass}>
+            Intervalo dos horários
+            <select
+              className={inputClass}
+              onChange={(event) => {
+                const interval = Number(event.target.value);
+                if (
+                  templateTimes.some(
+                    (time) => timeToMinutes(time) % interval !== 0
+                  )
+                ) {
+                  setMessage(
+                    "Os horários do modelo não seguem esse intervalo. Remova ou ajuste-os antes de trocar."
+                  );
+                  return;
+                }
+                setMessage("");
+                setTemplateInterval(interval);
+              }}
+              value={templateInterval}
+            >
+              <option value={15}>A cada 15 minutos</option>
+              <option value={30}>A cada 30 minutos</option>
+              <option value={60}>A cada 1 hora</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            Adicionar horário ao modelo
+            <input
+              className={inputClass}
+              onChange={(event) => setTemplateTimeInput(event.target.value)}
+              step={templateInterval * 60}
+              type="time"
+              value={templateTimeInput}
+            />
+          </label>
+          <button
+            className="rounded-xl border border-white/10 px-4 py-3 text-sm text-zinc-200 hover:bg-white/5"
+            onClick={() =>
+              addTime(templateTimeInput, templateInterval, templateTimes, (next) => {
+                setTemplateTimes(next);
+                setTemplateTimeInput("");
+              })
+            }
+            type="button"
+          >
+            + Horário
+          </button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {templateTimes.map((time) => (
+            <button
+              aria-label={`Remover ${time} do modelo`}
+              className="rounded-full border border-amber-300/20 bg-amber-300/[0.06] px-3 py-1.5 text-xs text-amber-100"
+              key={time}
+              onClick={() =>
+                setTemplateTimes((current) =>
+                  current.filter((item) => item !== time)
+                )
+              }
+              type="button"
+            >
+              {time} ×
+            </button>
+          ))}
+          {templateTimes.length === 0 && (
+            <span className="text-xs text-zinc-600">
+              Nenhum horário adicionado.
+            </span>
+          )}
+        </div>
+        <fieldset className="mt-4">
+          <legend className="text-xs font-medium text-zinc-300">
+            Aplicar aos dias
+          </legend>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+            {WEEKDAYS.map((day, weekday) => (
+              <label
+                className="flex items-center gap-2 text-xs text-zinc-400"
+                key={day}
+              >
+                <input
+                  checked={templateWeekdays.includes(weekday)}
+                  className="h-4 w-4 accent-amber-400"
+                  onChange={(event) =>
+                    setTemplateWeekdays((current) =>
+                      event.target.checked
+                        ? [...current, weekday]
+                        : current.filter((item) => item !== weekday)
+                    )
+                  }
+                  type="checkbox"
+                />
+                {day}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button
+          className="mt-4 rounded-lg bg-amber-400 px-4 py-2.5 text-xs font-semibold text-zinc-950 hover:bg-amber-300"
+          onClick={applyTemplate}
+          type="button"
+        >
+          Aplicar horários aos dias
+        </button>
+      </section>
+
+      <div className="divide-y divide-white/6">
+        {WEEKDAYS.map((weekdayName, weekday) => {
+          const day = days[weekday];
+          return (
+            <section className="py-4" key={weekdayName}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex min-h-10 items-center gap-3 text-sm text-zinc-200">
+                  <input
+                    checked={day.open}
+                    className="h-4 w-4 accent-amber-400"
+                    onChange={(event) =>
+                      setDays((current) => ({
+                        ...current,
+                        [weekday]: {
+                          ...current[weekday],
+                          open: event.target.checked,
+                        },
+                      }))
+                    }
+                    type="checkbox"
+                  />
+                  {weekdayName}
+                </label>
+                {day.open && (
+                  <label className={`${labelClass} w-full sm:w-56`}>
+                    Intervalo dos horários
+                    <select
+                      className={inputClass}
+                      onChange={(event) => {
+                        const intervalMinutes = Number(event.target.value);
+                        if (
+                          day.times.some(
+                            (time) =>
+                              timeToMinutes(time) % intervalMinutes !== 0
+                          )
+                        ) {
+                          setMessage(
+                            `Alguns horários de ${weekdayName} não seguem esse intervalo. Remova-os ou escolha outro intervalo.`
+                          );
+                          return;
+                        }
+                        setMessage("");
+                        setDays((current) => ({
+                          ...current,
+                          [weekday]: {
+                            ...current[weekday],
+                            intervalMinutes,
+                          },
+                        }));
+                      }}
+                      value={day.intervalMinutes}
+                    >
+                      <option value={15}>A cada 15 minutos</option>
+                      <option value={30}>A cada 30 minutos</option>
+                      <option value={60}>A cada 1 hora</option>
+                    </select>
+                  </label>
+                )}
+              </div>
+              {day.open && (
+                <>
+                  <div className="mt-3 flex flex-wrap items-end gap-3">
+                    <label className={`${labelClass} w-full sm:w-56`}>
+                      Horário exato
+                      <input
+                        className={inputClass}
+                        onChange={(event) =>
+                          setDailyTimeInputs((current) => ({
+                            ...current,
+                            [weekday]: event.target.value,
+                          }))
+                        }
+                        step={day.intervalMinutes * 60}
+                        type="time"
+                        value={dailyTimeInputs[weekday] || ""}
+                      />
+                    </label>
+                    <button
+                      className="rounded-xl border border-white/10 px-4 py-3 text-sm text-zinc-200 hover:bg-white/5"
+                      onClick={() =>
+                        addTime(
+                          dailyTimeInputs[weekday] || "",
+                          day.intervalMinutes,
+                          day.times,
+                          (times) => {
+                            setDays((current) => ({
+                              ...current,
+                              [weekday]: { ...current[weekday], times },
+                            }));
+                            setDailyTimeInputs((current) => ({
+                              ...current,
+                              [weekday]: "",
+                            }));
+                          }
+                        )
+                      }
+                      type="button"
+                    >
+                      + Adicionar horário
+                    </button>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {day.times.map((time) => (
+                      <button
+                        aria-label={`Remover ${time} de ${weekdayName}`}
+                        className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-200"
+                        key={time}
+                        onClick={() =>
+                          setDays((current) => ({
+                            ...current,
+                            [weekday]: {
+                              ...current[weekday],
+                              times: current[weekday].times.filter(
+                                (item) => item !== time
+                              ),
+                            },
+                          }))
+                        }
+                        type="button"
+                      >
+                        {time} ×
+                      </button>
+                    ))}
+                    {day.times.length === 0 && (
+                      <span className="text-xs text-amber-200">
+                        Adicione ao menos um horário para manter este dia aberto.
+                      </span>
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+          );
+        })}
+      </div>
+      {message && (
+        <p className="rounded-lg border border-amber-300/15 bg-amber-300/[0.05] px-3 py-2 text-xs text-amber-100">
+          {message}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function emptyBarberDraft(): BarberDraft {
@@ -409,12 +770,18 @@ export default function BusinessAdminDashboard({
     event.preventDefault();
     setError("");
     setNotice("");
+    if (
+      Object.values(days).some((day) => day.open && day.times.length === 0)
+    ) {
+      setError("Adicione ao menos um horário para cada dia aberto.");
+      return;
+    }
     const hours = Object.entries(days)
-      .filter(([, day]) => day.open)
+      .filter(([, day]) => day.open && day.times.length > 0)
       .map(([weekday, day]) => ({
         weekday: Number(weekday),
-        open_time: day.openTime,
-        close_time: day.closeTime,
+        slot_interval_minutes: day.intervalMinutes,
+        available_times: day.times,
       }));
     setSavingHours(true);
     try {
@@ -595,13 +962,22 @@ export default function BusinessAdminDashboard({
   async function saveBarber(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFormError("");
+    if (
+      barberDraft.customHours &&
+      Object.values(barberDraft.days).some(
+        (day) => day.open && day.times.length === 0
+      )
+    ) {
+      setFormError("Adicione ao menos um horário para cada dia aberto.");
+      return;
+    }
     const hours = barberDraft.customHours
       ? Object.entries(barberDraft.days)
-          .filter(([, day]) => day.open)
+          .filter(([, day]) => day.open && day.times.length > 0)
           .map(([weekday, day]) => ({
             weekday: Number(weekday),
-            open_time: day.openTime,
-            close_time: day.closeTime,
+            slot_interval_minutes: day.intervalMinutes,
+            available_times: day.times,
           }))
       : [];
     setSavingBarber(true);
@@ -635,6 +1011,16 @@ export default function BusinessAdminDashboard({
     } finally {
       setSavingBarber(false);
     }
+  }
+
+  function updateBarberDays(
+    updater: SetStateAction<Record<number, ScheduleDay>>
+  ) {
+    setBarberDraft((current) => ({
+      ...current,
+      days:
+        typeof updater === "function" ? updater(current.days) : updater,
+    }));
   }
 
   async function removeBarber(barber: BusinessBarberRow) {
@@ -1212,78 +1598,12 @@ export default function BusinessAdminDashboard({
                     Horários gerais da barbearia
                   </h3>
                   <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Ative os dias de atendimento e informe um intervalo para
-                    cada dia. A grade pública disponibiliza horários em blocos
-                    de 30 minutos.
+                    Escolha horários de início exatos para cada dia. O intervalo
+                    define a granularidade permitida; somente os horários
+                    adicionados ficam disponíveis aos clientes.
                   </p>
                 </div>
-                <div className="divide-y divide-white/6">
-                  {WEEKDAYS.map((weekdayName, weekday) => {
-                    const day = days[weekday];
-                    return (
-                      <div
-                        className="grid gap-3 py-4 sm:grid-cols-[minmax(150px,1fr)_1fr_1fr] sm:items-end"
-                        key={weekdayName}
-                      >
-                        <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-200">
-                          <input
-                            checked={day.open}
-                            className="h-4 w-4 accent-amber-400"
-                            onChange={(event) =>
-                              setDays((current) => ({
-                                ...current,
-                                [weekday]: {
-                                  ...current[weekday],
-                                  open: event.target.checked,
-                                },
-                              }))
-                            }
-                            type="checkbox"
-                          />
-                          {weekdayName}
-                        </label>
-                        <label className={`${labelClass} ${day.open ? "" : "opacity-40"}`}>
-                          Abre
-                          <input
-                            className={inputClass}
-                            disabled={!day.open}
-                            onChange={(event) =>
-                              setDays((current) => ({
-                                ...current,
-                                [weekday]: {
-                                  ...current[weekday],
-                                  openTime: event.target.value,
-                                },
-                              }))
-                            }
-                            required={day.open}
-                            type="time"
-                            value={day.openTime}
-                          />
-                        </label>
-                        <label className={`${labelClass} ${day.open ? "" : "opacity-40"}`}>
-                          Fecha
-                          <input
-                            className={inputClass}
-                            disabled={!day.open}
-                            onChange={(event) =>
-                              setDays((current) => ({
-                                ...current,
-                                [weekday]: {
-                                  ...current[weekday],
-                                  closeTime: event.target.value,
-                                },
-                              }))
-                            }
-                            required={day.open}
-                            type="time"
-                            value={day.closeTime}
-                          />
-                        </label>
-                      </div>
-                    );
-                  })}
-                </div>
+                <ScheduleEditor days={days} setDays={setDays} />
                 <div className="mt-5 flex justify-end border-t border-white/6 pt-5">
                   <button
                     className="rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1880,85 +2200,11 @@ export default function BusinessAdminDashboard({
                   </span>
                 </label>
                 {barberDraft.customHours && (
-                  <div className="mt-3 divide-y divide-white/6">
-                    {WEEKDAYS.map((weekdayName, weekday) => {
-                      const day = barberDraft.days[weekday];
-                      return (
-                        <div
-                          className="grid gap-3 py-3 sm:grid-cols-[minmax(150px,1fr)_1fr_1fr] sm:items-end"
-                          key={weekdayName}
-                        >
-                          <label className="flex min-h-11 items-center gap-3 text-sm text-zinc-200">
-                            <input
-                              checked={day.open}
-                              className="h-4 w-4 accent-amber-400"
-                              onChange={(event) =>
-                                setBarberDraft((current) => ({
-                                  ...current,
-                                  days: {
-                                    ...current.days,
-                                    [weekday]: {
-                                      ...current.days[weekday],
-                                      open: event.target.checked,
-                                    },
-                                  },
-                                }))
-                              }
-                              type="checkbox"
-                            />
-                            {weekdayName}
-                          </label>
-                          <label
-                            className={`${labelClass} ${day.open ? "" : "opacity-40"}`}
-                          >
-                            Abre
-                            <input
-                              className={inputClass}
-                              disabled={!day.open}
-                              onChange={(event) =>
-                                setBarberDraft((current) => ({
-                                  ...current,
-                                  days: {
-                                    ...current.days,
-                                    [weekday]: {
-                                      ...current.days[weekday],
-                                      openTime: event.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                              required={day.open}
-                              type="time"
-                              value={day.openTime}
-                            />
-                          </label>
-                          <label
-                            className={`${labelClass} ${day.open ? "" : "opacity-40"}`}
-                          >
-                            Fecha
-                            <input
-                              className={inputClass}
-                              disabled={!day.open}
-                              onChange={(event) =>
-                                setBarberDraft((current) => ({
-                                  ...current,
-                                  days: {
-                                    ...current.days,
-                                    [weekday]: {
-                                      ...current.days[weekday],
-                                      closeTime: event.target.value,
-                                    },
-                                  },
-                                }))
-                              }
-                              required={day.open}
-                              type="time"
-                              value={day.closeTime}
-                            />
-                          </label>
-                        </div>
-                      );
-                    })}
+                  <div className="mt-3">
+                    <ScheduleEditor
+                      days={barberDraft.days}
+                      setDays={updateBarberDays}
+                    />
                   </div>
                 )}
               </fieldset>

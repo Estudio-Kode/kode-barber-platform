@@ -139,7 +139,23 @@ export function getPublicAvailableTimes(
   for (const hours of hoursForDay) {
     const opensAt = toMinutes(hours.open_time);
     const closesAt = toMinutes(hours.close_time);
-    for (let start = opensAt; start + duration <= closesAt; start += 30) {
+    const availableStarts =
+      hours.available_times.length > 0
+        ? hours.available_times.map(toMinutes)
+        : (() => {
+            const starts: number[] = [];
+            for (
+              let start = opensAt;
+              start + duration <= closesAt;
+              start += hours.slot_interval_minutes
+            ) {
+              starts.push(start);
+            }
+            return starts;
+          })();
+
+    for (const start of availableStarts) {
+      if (start + duration > closesAt) continue;
       const time = fromMinutes(start);
       const slotDateTime = new Date(
         parsedDate.getFullYear(),

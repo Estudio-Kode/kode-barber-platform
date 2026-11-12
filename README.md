@@ -83,7 +83,8 @@ KODE_BARBER/
    `supabase/migrations/202611120002_remove_ziah_business.sql`,
    `supabase/migrations/202611120003_business_admin_access.sql`,
    `supabase/migrations/202611120004_barber_booking_settings.sql` e
-   `supabase/migrations/202611120005_business_barber_management.sql`.
+   `supabase/migrations/202611120005_business_barber_management.sql`,
+   `supabase/migrations/202611120006_exact_booking_times.sql`.
    A primeira cria as tabelas e um plano inicial sem barbearias de demonstração; a segunda
    também remove a barbearia de demonstração de ambientes em que a primeira migração já havia sido aplicada.
    A exclusão da empresa remove em cascata os dados vinculados a ela.
@@ -95,11 +96,15 @@ KODE_BARBER/
    `supabase/migrations/202611120005_business_barber_management.sql` no SQL Editor do Supabase.
    Ela habilita o cadastro da equipe, aplica o limite de barbeiros do plano no banco e
    permite vincular serviços e horários próprios (incluindo dias fechados) a cada barbeiro.
-4. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e os segredos
+4. Se a migração 005 já foi aplicada, execute
+   `supabase/migrations/202611120006_exact_booking_times.sql` no SQL Editor do Supabase.
+   Ela converte os horários existentes em listas de horários explícitos e habilita a
+   configuração de intervalos de 15, 30 ou 60 minutos.
+5. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e os segredos
    `PLATFORM_SESSION_SECRET` e `BARBER_SESSION_SECRET`, cada um aleatório e com pelo menos
    32 caracteres, no `.env.local`.
-5. Acesse `/platform` para cadastrar barbearias e configurar os planos.
-6. Na lista de barbearias, escolha **Configurar acesso**. Defina o nome, e-mail e senha
+6. Acesse `/platform` para cadastrar barbearias e configurar os planos.
+7. Na lista de barbearias, escolha **Configurar acesso**. Defina o nome, e-mail e senha
    temporária do responsável; entregue a senha diretamente, pois ela não é enviada por
    e-mail. No primeiro acesso em `/admin`, o responsável deverá criar uma nova senha.
 
@@ -109,7 +114,9 @@ agendamento em `/b/{slug}`. O administrador de cada barbearia pode configurar se
 adicionais, promoções, horários gerais e serviços marcados para contato direto no painel
 `/admin`. Na seção **Equipe**, pode cadastrar barbeiros dentro do limite do plano, associar
 serviços e definir horários próprios; quando não forem definidos, vale o funcionamento
-geral da barbearia. O funcionamento aceita um intervalo contínuo por dia.
+geral da barbearia. O funcionamento permite escolher horários exatos, definir a
+granularidade (15, 30 ou 60 minutos) e aplicar um modelo a dias selecionados; se esses dias
+já tiverem horários, o painel pede confirmação antes de sobrescrevê-los.
 
 ---
 
