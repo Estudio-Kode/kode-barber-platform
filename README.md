@@ -1,6 +1,6 @@
-# Ziah Cortes — Sistema de Agendamento (Next.js + TypeScript + Supabase)
+# Kode Barber Platform — Agendamento para barbearias
 
-Sistema de agendamento online para a barbearia **Ziah Cortes**, desenvolvido pela **Kode** em **Next.js (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL)**.
+Plataforma em evolução para agendamento e operação de barbearias, desenvolvida pela **Kode** com **Next.js (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL)**. O tenant inicial é a **Ziah Cortes**.
 
 ---
 
@@ -12,23 +12,22 @@ PROJETO_ZIAH/
 │   ├── app/
 │   │   ├── page.tsx                        # Interface de agendamento do cliente (Mobile + Desktop)
 │   │   ├── admin/page.tsx                  # Painel administrativo do barbeiro (/admin)
+│   │   ├── platform/page.tsx               # Central Kode para administrar barbearias e planos (/platform)
 │   │   ├── layout.tsx                      # Layout raiz + suporte a tema claro/escuro
 │   │   ├── globals.css                     # Design tokens (Modern Barber Dark/Gold & Light)
 │   │   └── api/                            # Rotas Server-Only protegidas
 │   │       ├── config/route.ts             # Configuração pública da barbearia
 │   │       ├── days/route.ts               # Dias abertos selecionáveis
 │   │       ├── availability/route.ts       # Horários disponíveis em tempo real
-│   │       ├── appointments/route.ts       # Criação de marcação com trava de concorrência
-│   │       ├── appointments/[id]/route.ts  # 410 Gone (cancelamento direto desativado)
-│   │       ├── my-appointments/route.ts    # 410 Gone (consulta por telefone desativada)
-│   │       └── admin/                      # Rotas autenticadas do barbeiro
-│   │           ├── login/route.ts          # Login com rate-limit por IP + cookie HttpOnly
-│   │           ├── session/route.ts        # Verificação e encerramento de sessão
-│   │           ├── slots/route.ts          # Grade do dia (marcado/bloqueado/livre + receita)
-│   │           ├── appointments/route.ts   # Listagem de marcações
-│   │           ├── appointments/[id]/route.ts # Desmarcar cliente + aviso no Telegram
-│   │           ├── blocks/route.ts         # Bloquear / liberar horários
-│   │           └── notes/route.ts          # Observações do dia com auto-save
+│   │       ├── appointments/               # Agendamentos públicos e cancelamento desativado
+│   │       ├── my-appointments/            # Consulta pública desativada
+│   │       ├── admin/                      # Rotas autenticadas do barbeiro
+│   │       └── platform/                   # Login, barbearias e planos da plataforma
+│   │           ├── login/route.ts
+│   │           ├── session/route.ts
+│   │           ├── businesses/route.ts
+│   │           ├── businesses/[id]/route.ts
+│   │           └── plans/route.ts
 │   ├── components/
 │   │   ├── BrandLogo.tsx                   # Logo vetorial Ziah Cortes
 │   │   ├── ThemeToggle.tsx                 # Alternador de tema Claro / Escuro
@@ -43,6 +42,7 @@ PROJETO_ZIAH/
 │       └── telegram.ts                     # Disparo assíncrono de notificações no Telegram
 ├── .env.example                            # Modelo das variáveis de ambiente
 ├── .env.local                              # Segredos locais (ignorado pelo Git)
+├── supabase/migrations/                    # Esquema multiempresa e dados iniciais
 ├── security-test.mjs                       # Bateria automatizada de auditoria de segurança
 ├── test-suite.mjs                          # Bateria automatizada de testes de integração
 └── package.json
@@ -67,6 +67,22 @@ PROJETO_ZIAH/
 4. Acesse no navegador:
    - **Cliente:** [http://localhost:3000](http://localhost:3000)
    - **Painel do Barbeiro:** [http://localhost:3000/admin](http://localhost:3000/admin)
+   - **Central da Plataforma:** [http://localhost:3000/platform](http://localhost:3000/platform)
+
+## Primeira configuração multiempresa
+
+1. Aplique `supabase/migrations/202611120001_platform_foundation.sql` em um projeto Supabase vazio.
+   A migração cria os planos, barbearias, serviços, equipe, horários, clientes, agendamentos,
+   catálogo e assinaturas de clientes. A barbearia existente é cadastrada como `ziah-cortes`.
+2. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e um
+   `PLATFORM_SESSION_SECRET` aleatório com pelo menos 32 caracteres no `.env.local`.
+   Use credenciais diferentes das do painel do barbeiro.
+3. Acesse `/platform` para cadastrar barbearias, configurar os planos e provisionar o acesso.
+
+Esta primeira etapa oferece o painel central e o esquema isolado por `business_id`.
+O agendamento atual continua ligado ao tenant `ziah-cortes`; páginas públicas por slug
+(`/b/<slug>`) e os módulos operacionais por tenant serão conectados em fases seguintes.
+O banco anterior foi excluído, portanto a migração cria a estrutura do zero e não recupera dados.
 
 ---
 

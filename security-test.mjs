@@ -33,6 +33,7 @@ console.log("🔒 Iniciando Bateria de Testes de Segurança (Ziah Cortes)...\n")
   const clientFiles = [
     path.resolve("src/app/page.tsx"),
     path.resolve("src/app/admin/page.tsx"),
+    path.resolve("src/app/platform/page.tsx"),
     path.resolve("src/app/layout.tsx"),
     path.resolve("src/config/business.ts"),
   ];
@@ -116,6 +117,16 @@ console.log("🔒 Iniciando Bateria de Testes de Segurança (Ziah Cortes)...\n")
     assert.match(code, /isAdminAuthenticated/, `Rota ${r} sem verificação isAdminAuthenticated`);
     assert.match(code, /status:\s*401/, `Rota ${r} sem retorno 401`);
   }
+  const protectedPlatformRoutes = [
+    "src/app/api/platform/businesses/route.ts",
+    "src/app/api/platform/businesses/[id]/route.ts",
+    "src/app/api/platform/plans/route.ts",
+  ];
+  for (const r of protectedPlatformRoutes) {
+    const code = fs.readFileSync(path.resolve(r), "utf8");
+    assert.match(code, /isPlatformAdminAuthenticated/, `Rota ${r} sem autenticação da plataforma`);
+    assert.match(code, /status:\s*401/, `Rota ${r} sem retorno 401`);
+  }
   console.log("✓ [5/9] Todas as rotas /api/admin/* exigem autenticação verificada no servidor antes de qualquer acesso ao banco");
 }
 
@@ -126,6 +137,10 @@ console.log("🔒 Iniciando Bateria de Testes de Segurança (Ziah Cortes)...\n")
     "src/app/api/admin/login/route.ts",
     "src/app/api/admin/blocks/route.ts",
     "src/app/api/admin/notes/route.ts",
+    "src/app/api/platform/login/route.ts",
+    "src/app/api/platform/businesses/route.ts",
+    "src/app/api/platform/businesses/[id]/route.ts",
+    "src/app/api/platform/plans/route.ts",
   ];
 
   for (const r of bodyRoutes) {

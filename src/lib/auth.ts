@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
 export const ADMIN_COOKIE_NAME = "ziah_admin_session";
+export const PLATFORM_ADMIN_COOKIE_NAME = "kode_platform_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 horas
 
 const LOGIN_MAX_ATTEMPTS = 5;
@@ -44,29 +45,61 @@ export function verifyAdminCredentials(
   return userOk && passOk;
 }
 
-export function createSignedSessionToken(): string {
+export function verifyPlatformAdminCredentials(
+  username: unknown,
+  password: unknown
+): boolean {
+  const givenUser = typeof username === "string" ? username.trim() : "";
+  const givenPass = typeof password === "string" ? password : "";
+  const expectedUser = (process.env.PLATFORM_ADMIN_USER || "").trim();
+  const expectedPass = process.env.PLATFORM_ADMIN_PASSWORD || "";
+
+  if (!expectedUser || !expectedPass) return false;
+  return (
+    timingSafeEqualStr(givenUser, expectedUser) &&
+    timingSafeEqualStr(givenPass, expectedPass)
+  );
+}
+
+function createSignedToken(subject: string, secret: string): string {
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const nonce = crypto.randomBytes(16).toString("base64url");
   const payload = Buffer.from(
-    JSON.stringify({ sub: "admin", exp, nonce }),
+    JSON.stringify({ sub: subject, exp, nonce }),
     "utf8"
   ).toString("base64url");
 
   const sig = crypto
-    .createHmac("sha256", getSessionSecret())
+    .createHmac("sha256", secret)
     .update(payload)
     .digest("base64url");
 
   return `${payload}.${sig}`;
 }
 
-export function verifySignedSessionToken(token: string | undefined | null): boolean {
+export function createSignedSessionToken(): string {
+  return createSignedToken("admin", getSessionSecret());
+}
+
+export function createSignedPlatformSessionToken(): string {
+  const secret = process.env.PLATFORM_SESSION_SECRET || "";
+  if (secret.length < 32) {
+    throw new Error("PLATFORM_SESSION_SECRET deve ter pelo menos 32 caracteres.");
+  }
+  return createSignedToken("platform-admin", secret);
+}
+
+export function verifySignedSessionToken(
+  token: string | undefined | null,
+  expectedSubject = "admin",
+  secret = getSessionSecret()
+): boolean {
   if (!token || !token.includes(".")) return false;
   const [payload, sig] = token.split(".");
   if (!payload || !sig) return false;
 
   const expectedSig = crypto
-    .createHmac("sha256", getSessionSecret())
+    .createHmac("sha256", secret)
     .update(payload)
     .digest("base64url");
 
@@ -76,7 +109,9 @@ export function verifySignedSessionToken(token: string | undefined | null): bool
     const decoded = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8")
     );
-    if (typeof decoded.exp !== "number") return false;
+    if (decoded.sub !== expectedSubject || typeof decoded.exp !== "number") {
+      return false;
+    }
     const nowSec = Math.floor(Date.now() / 1000);
     return decoded.exp > nowSec;
   } catch {
@@ -107,6 +142,38 @@ export async function isAdminAuthenticated(req?: NextRequest): Promise<boolean> 
     }
     const reqCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (verifySignedSessionToken(reqCookie)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export async function isPlatformAdminAuthenticated(
+  req?: NextRequest
+): Promise<boolean> {
+  const secret = process.env.PLATFORM_SESSION_SECRET || "";
+  if (secret.length < 32) return false;
+
+  try {
+    const cookieToken = (await cookies()).get(PLATFORM_ADMIN_COOKIE_NAME)?.value;
+    if (verifySignedSessionToken(cookieToken, "platform-admin", secret)) {
+      return true;
+    }
+  } catch {
+    // Fall back to the request credentials when the cookie store is unavailable.
+  }
+
+  if (req) {
+    const authHeader = req.headers.get("authorization") || "";
+    if (authHeader.startsWith("Bearer ")) {
+      const bearer = authHeader.slice(7).trim();
+      if (verifySignedSessionToken(bearer, "platform-admin", secret)) {
+        return true;
+      }
+    }
+    const reqCookie = req.cookies.get(PLATFORM_ADMIN_COOKIE_NAME)?.value;
+    if (verifySignedSessionToken(reqCookie, "platform-admin", secret)) {
       return true;
     }
   }
@@ -152,6 +219,17 @@ export function clearLoginFailures(ip: string): void {
 export function getSessionCookieOptions() {
   return {
     name: ADMIN_COOKIE_NAME,
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: SESSION_TTL_SECONDS,
+  };
+}
+
+export function getPlatformSessionCookieOptions() {
+  return {
+    name: PLATFORM_ADMIN_COOKIE_NAME,
     httpOnly: true,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",

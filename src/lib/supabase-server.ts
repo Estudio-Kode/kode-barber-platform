@@ -25,6 +25,168 @@ function buildHeaders(extra?: Record<string, string>): Record<string, string> {
   };
 }
 
+export const LEGACY_BUSINESS_ID = "11111111-1111-4111-8111-111111111111";
+
+export type PlatformFeature =
+  | "online_booking"
+  | "multiple_barbers"
+  | "advanced_reports"
+  | "client_memberships"
+  | "product_catalog";
+
+export interface PlatformPlanRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  price_cents: number | null;
+  max_barbers: number;
+  max_services: number | null;
+  max_products: number | null;
+  features: Record<PlatformFeature, boolean>;
+  active: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlatformBusinessRow {
+  id: string;
+  slug: string;
+  name: string;
+  owner_name: string;
+  email: string;
+  whatsapp: string;
+  logo_url: string | null;
+  status: "setup" | "active" | "suspended";
+  plan_id: string;
+  plan_price_cents: number | null;
+  created_at: string;
+  updated_at: string;
+  platform_plans: Pick<
+    PlatformPlanRow,
+    "id" | "name" | "price_cents" | "max_barbers" | "features"
+  > | null;
+}
+
+async function platformDbRows<T>(
+  endpoint: string,
+  init?: RequestInit
+): Promise<T[]> {
+  const { url } = getSupabaseEnv();
+  const response = await fetch(`${url}/rest/v1/${endpoint}`, {
+    ...init,
+    headers: buildHeaders({ Prefer: "return=representation" }),
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Erro na operação da plataforma no Supabase: ${response.status} ${errorText}`
+    );
+  }
+  return (await response.json()) as T[];
+}
+
+export async function dbGetPlatformPlans(): Promise<PlatformPlanRow[]> {
+  return platformDbRows<PlatformPlanRow>(
+    "platform_plans?select=*&order=sort_order.asc,name.asc"
+  );
+}
+
+export async function dbGetPlatformBusinesses(): Promise<PlatformBusinessRow[]> {
+  return platformDbRows<PlatformBusinessRow>(
+    "businesses?select=id,slug,name,owner_name,email,whatsapp,logo_url,status,plan_id,plan_price_cents,created_at,updated_at,platform_plans(id,name,price_cents,max_barbers,features)&order=created_at.desc"
+  );
+}
+
+export async function dbCreatePlatformBusiness(input: {
+  slug: string;
+  name: string;
+  owner_name: string;
+  email: string;
+  whatsapp: string;
+  plan_id: string;
+  plan_price_cents: number | null;
+}): Promise<PlatformBusinessRow> {
+  const rows = await platformDbRows<PlatformBusinessRow>(
+    "businesses?select=id,slug,name,owner_name,email,whatsapp,logo_url,status,plan_id,plan_price_cents,created_at,updated_at",
+    {
+      method: "POST",
+      body: JSON.stringify({ ...input, status: "setup" }),
+    }
+  );
+  if (!rows[0]) throw new Error("O Supabase não retornou a barbearia criada.");
+  return rows[0];
+}
+
+export async function dbUpdatePlatformBusiness(
+  id: string,
+  input: Partial<{
+    slug: string;
+    name: string;
+    owner_name: string;
+    email: string;
+    whatsapp: string;
+    status: PlatformBusinessRow["status"];
+    plan_id: string;
+    plan_price_cents: number | null;
+  }>
+): Promise<PlatformBusinessRow | null> {
+  const rows = await platformDbRows<PlatformBusinessRow>(
+    `businesses?id=eq.${encodeURIComponent(id)}&select=id,slug,name,owner_name,email,whatsapp,logo_url,status,plan_id,plan_price_cents,created_at,updated_at`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ ...input, updated_at: new Date().toISOString() }),
+    }
+  );
+  return rows[0] ?? null;
+}
+
+export async function dbCreatePlatformPlan(input: {
+  slug: string;
+  name: string;
+  description: string;
+  price_cents: number | null;
+  max_barbers: number;
+  max_services: number | null;
+  max_products: number | null;
+  features: Record<PlatformFeature, boolean>;
+  sort_order: number;
+}): Promise<PlatformPlanRow> {
+  const rows = await platformDbRows<PlatformPlanRow>(
+    "platform_plans?select=*",
+    { method: "POST", body: JSON.stringify(input) }
+  );
+  if (!rows[0]) throw new Error("O Supabase não retornou o plano criado.");
+  return rows[0];
+}
+
+export async function dbUpdatePlatformPlan(
+  id: string,
+  input: Partial<{
+    slug: string;
+    name: string;
+    description: string;
+    price_cents: number | null;
+    max_barbers: number;
+    max_services: number | null;
+    max_products: number | null;
+    features: Record<PlatformFeature, boolean>;
+    active: boolean;
+    sort_order: number;
+  }>
+): Promise<PlatformPlanRow | null> {
+  const rows = await platformDbRows<PlatformPlanRow>(
+    `platform_plans?id=eq.${encodeURIComponent(id)}&select=*`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ ...input, updated_at: new Date().toISOString() }),
+    }
+  );
+  return rows[0] ?? null;
+}
+
 export interface ClientRow {
   phone: string;
   name: string;
@@ -65,7 +227,7 @@ export async function dbGetAppointmentsByDate(
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?date=eq.${encodeURIComponent(
     dateStr
-  )}&select=id,phone,service,date,time,created_at,clients(name)&order=time.asc`;
+  )}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,created_at,clients(name)&order=time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -91,7 +253,7 @@ export async function dbGetAllAppointments(): Promise<
   Array<{ id: number; phone: string; service: string; date: string; time: string; name: string; created_at: string }>
 > {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?select=id,phone,service,date,time,created_at,clients(name)&order=date.asc,time.asc`;
+  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,created_at,clients(name)&order=date.asc,time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -117,7 +279,7 @@ export async function dbGetBlockedTimes(dateStr: string): Promise<Set<string>> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/blocked_slots?date=eq.${encodeURIComponent(
     dateStr
-  )}&select=time`;
+  )}&business_id=eq.${LEGACY_BUSINESS_ID}&barber_id=is.null&select=time`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -139,7 +301,7 @@ export async function dbCountClientWeekAppointments(
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?phone=eq.${encodeURIComponent(
     phone
-  )}&and=(date.gte.${encodeURIComponent(mondayIso)},date.lte.${encodeURIComponent(
+  )}&business_id=eq.${LEGACY_BUSINESS_ID}&and=(date.gte.${encodeURIComponent(mondayIso)},date.lte.${encodeURIComponent(
     sundayIso
   )})&select=id`;
 
@@ -157,7 +319,7 @@ export async function dbCountClientWeekAppointments(
 
 export async function dbUpsertClient(phone: string, name: string): Promise<void> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/clients?on_conflict=phone`;
+  const endpoint = `${url}/rest/v1/clients?on_conflict=business_id,phone`;
   const nowIso = new Date().toISOString();
 
   const res = await fetch(endpoint, {
@@ -166,6 +328,7 @@ export async function dbUpsertClient(phone: string, name: string): Promise<void>
       Prefer: "resolution=merge-duplicates,return=minimal",
     }),
     body: JSON.stringify({
+      business_id: LEGACY_BUSINESS_ID,
       phone,
       name,
       updated_at: nowIso,
@@ -192,6 +355,7 @@ export async function dbInsertAppointment(params: {
       Prefer: "return=representation",
     }),
     body: JSON.stringify({
+      business_id: LEGACY_BUSINESS_ID,
       phone: params.phone,
       service: params.service,
       date: params.date,
@@ -236,7 +400,7 @@ export async function dbGetAppointmentById(id: number): Promise<{
   name: string;
 } | null> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&select=id,phone,service,date,time,clients(name)`;
+  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,clients(name)`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -258,7 +422,7 @@ export async function dbGetAppointmentById(id: number): Promise<{
 
 export async function dbDeleteAppointmentById(id: number): Promise<void> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}`;
+  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${LEGACY_BUSINESS_ID}`;
 
   const res = await fetch(endpoint, {
     method: "DELETE",
@@ -277,7 +441,7 @@ export async function dbHasAppointmentAt(
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?date=eq.${encodeURIComponent(
     dateStr
-  )}&time=eq.${encodeURIComponent(timeStr)}&select=id`;
+  )}&time=eq.${encodeURIComponent(timeStr)}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -290,7 +454,7 @@ export async function dbHasAppointmentAt(
 
 export async function dbBlockSlot(dateStr: string, timeStr: string): Promise<void> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/blocked_slots?on_conflict=date,time`;
+  const endpoint = `${url}/rest/v1/blocked_slots?on_conflict=business_id,barber_id,date,time`;
 
   const res = await fetch(endpoint, {
     method: "POST",
@@ -298,6 +462,8 @@ export async function dbBlockSlot(dateStr: string, timeStr: string): Promise<voi
       Prefer: "resolution=ignore-duplicates,return=minimal",
     }),
     body: JSON.stringify({
+      business_id: LEGACY_BUSINESS_ID,
+      barber_id: null,
       date: dateStr,
       time: timeStr,
     }),
@@ -312,7 +478,7 @@ export async function dbUnblockSlot(dateStr: string, timeStr: string): Promise<v
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/blocked_slots?date=eq.${encodeURIComponent(
     dateStr
-  )}&time=eq.${encodeURIComponent(timeStr)}`;
+  )}&time=eq.${encodeURIComponent(timeStr)}&business_id=eq.${LEGACY_BUSINESS_ID}&barber_id=is.null`;
 
   const res = await fetch(endpoint, {
     method: "DELETE",
@@ -328,7 +494,7 @@ export async function dbGetDayNote(dateStr: string): Promise<string> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/day_notes?date=eq.${encodeURIComponent(
     dateStr
-  )}&select=note`;
+  )}&business_id=eq.${LEGACY_BUSINESS_ID}&select=note`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -346,7 +512,7 @@ export async function dbSaveDayNote(dateStr: string, note: string): Promise<void
   if (!cleaned.trim()) {
     const delEndpoint = `${url}/rest/v1/day_notes?date=eq.${encodeURIComponent(
       dateStr
-    )}`;
+    )}&business_id=eq.${LEGACY_BUSINESS_ID}`;
     await fetch(delEndpoint, {
       method: "DELETE",
       headers: buildHeaders({ Prefer: "return=minimal" }),
@@ -354,13 +520,14 @@ export async function dbSaveDayNote(dateStr: string, note: string): Promise<void
     return;
   }
 
-  const endpoint = `${url}/rest/v1/day_notes?on_conflict=date`;
+  const endpoint = `${url}/rest/v1/day_notes?on_conflict=business_id,date`;
   const res = await fetch(endpoint, {
     method: "POST",
     headers: buildHeaders({
       Prefer: "resolution=merge-duplicates,return=minimal",
     }),
     body: JSON.stringify({
+      business_id: LEGACY_BUSINESS_ID,
       date: dateStr,
       note: cleaned,
       updated_at: new Date().toISOString(),
