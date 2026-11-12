@@ -99,7 +99,7 @@ KODE_BARBER/
 4. Se a migração 005 já foi aplicada, execute
    `supabase/migrations/202611120006_exact_booking_times.sql` no SQL Editor do Supabase.
    Ela converte os horários existentes em listas de horários explícitos e habilita a
-   configuração de intervalos de 15, 30 ou 60 minutos.
+   configuração de intervalos de 30, 60, 90 ou 120 minutos.
 5. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e os segredos
    `PLATFORM_SESSION_SECRET` e `BARBER_SESSION_SECRET`, cada um aleatório e com pelo menos
    32 caracteres, no `.env.local`.
@@ -115,7 +115,7 @@ adicionais, promoções, horários gerais e serviços marcados para contato dire
 `/admin`. Na seção **Equipe**, pode cadastrar barbeiros dentro do limite do plano, associar
 serviços e definir horários próprios; quando não forem definidos, vale o funcionamento
 geral da barbearia. O funcionamento permite escolher horários exatos, definir a
-granularidade (15, 30 ou 60 minutos) e aplicar um modelo a dias selecionados; se esses dias
+granularidade (30 minutos, 1 hora, 1,5 hora ou 2 horas) e aplicar um modelo a dias selecionados; se esses dias
 já tiverem horários, o painel pede confirmação antes de sobrescrevê-los.
 
 ---

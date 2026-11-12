@@ -62,15 +62,14 @@ export function parseBusinessSchedule(
     }
     if (
       typeof interval !== "number" ||
-      ![15, 30, 60].includes(interval) ||
+      ![30, 60, 90, 120].includes(interval) ||
       !Array.isArray(rawTimes) ||
       rawTimes.length === 0 ||
       rawTimes.length > 96 ||
       rawTimes.some(
         (time) =>
           typeof time !== "string" ||
-          !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ||
-          timeToMinutes(time) % interval !== 0
+          !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)
       )
     ) {
       return {
@@ -81,6 +80,18 @@ export function parseBusinessSchedule(
     const times = rawTimes as string[];
     if (new Set(times).size !== times.length) {
       return { error: "Não repita horários no mesmo dia." };
+    }
+    const sortedTimes = [...times].sort();
+    if (
+      sortedTimes.slice(1).some(
+        (time, index) =>
+          (timeToMinutes(time) - timeToMinutes(sortedTimes[index])) % interval !==
+          0
+      )
+    ) {
+      return {
+        error: "Os horários do dia não respeitam o intervalo selecionado.",
+      };
     }
     weekdays.add(weekday);
     hours.push({

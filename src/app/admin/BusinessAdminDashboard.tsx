@@ -216,6 +216,15 @@ function timeToMinutes(value: string): number {
   return hours * 60 + minutes;
 }
 
+function timesFollowInterval(times: string[], interval: number): boolean {
+  const sortedTimes = [...times].sort();
+  return sortedTimes.slice(1).every((time, index) => {
+    const difference =
+      timeToMinutes(time) - timeToMinutes(sortedTimes[index]);
+    return difference % interval === 0;
+  });
+}
+
 function ScheduleEditor({
   days,
   setDays,
@@ -243,9 +252,9 @@ function ScheduleEditor({
       setMessage("Escolha um horário antes de adicioná-lo.");
       return;
     }
-    if (timeToMinutes(time) % interval !== 0) {
+    if (!timesFollowInterval([...current, time], interval)) {
       setMessage(
-        `Esse horário não segue o intervalo de ${interval} minutos escolhido.`
+        `Esse horário não mantém o intervalo de ${interval} minutos em relação aos demais horários.`
       );
       return;
     }
@@ -262,7 +271,7 @@ function ScheduleEditor({
       setMessage("Escolha ao menos um dia e adicione horários ao modelo.");
       return;
     }
-    if (templateTimes.some((time) => timeToMinutes(time) % templateInterval)) {
+    if (!timesFollowInterval(templateTimes, templateInterval)) {
       setMessage(
         "Ajuste o intervalo do modelo ou os horários para que sejam compatíveis."
       );
@@ -313,11 +322,7 @@ function ScheduleEditor({
               className={inputClass}
               onChange={(event) => {
                 const interval = Number(event.target.value);
-                if (
-                  templateTimes.some(
-                    (time) => timeToMinutes(time) % interval !== 0
-                  )
-                ) {
+                if (!timesFollowInterval(templateTimes, interval)) {
                   setMessage(
                     "Os horários do modelo não seguem esse intervalo. Remova ou ajuste-os antes de trocar."
                   );
@@ -328,9 +333,10 @@ function ScheduleEditor({
               }}
               value={templateInterval}
             >
-              <option value={15}>A cada 15 minutos</option>
               <option value={30}>A cada 30 minutos</option>
               <option value={60}>A cada 1 hora</option>
+              <option value={90}>A cada 1,5 hora</option>
+              <option value={120}>A cada 2 horas</option>
             </select>
           </label>
           <label className={labelClass}>
@@ -338,7 +344,7 @@ function ScheduleEditor({
             <input
               className={inputClass}
               onChange={(event) => setTemplateTimeInput(event.target.value)}
-              step={templateInterval * 60}
+              step={60}
               type="time"
               value={templateTimeInput}
             />
@@ -444,12 +450,7 @@ function ScheduleEditor({
                       className={inputClass}
                       onChange={(event) => {
                         const intervalMinutes = Number(event.target.value);
-                        if (
-                          day.times.some(
-                            (time) =>
-                              timeToMinutes(time) % intervalMinutes !== 0
-                          )
-                        ) {
+                        if (!timesFollowInterval(day.times, intervalMinutes)) {
                           setMessage(
                             `Alguns horários de ${weekdayName} não seguem esse intervalo. Remova-os ou escolha outro intervalo.`
                           );
@@ -466,9 +467,10 @@ function ScheduleEditor({
                       }}
                       value={day.intervalMinutes}
                     >
-                      <option value={15}>A cada 15 minutos</option>
                       <option value={30}>A cada 30 minutos</option>
                       <option value={60}>A cada 1 hora</option>
+                      <option value={90}>A cada 1,5 hora</option>
+                      <option value={120}>A cada 2 horas</option>
                     </select>
                   </label>
                 )}
@@ -486,7 +488,7 @@ function ScheduleEditor({
                             [weekday]: event.target.value,
                           }))
                         }
-                        step={day.intervalMinutes * 60}
+                        step={60}
                         type="time"
                         value={dailyTimeInputs[weekday] || ""}
                       />

@@ -1,6 +1,14 @@
 alter table public.business_hours
-  add column if not exists slot_interval_minutes smallint not null default 30
-    check (slot_interval_minutes in (15, 30, 60)),
+  drop constraint if exists business_hours_slot_interval_minutes_check;
+
+alter table public.business_hours
+  add column if not exists slot_interval_minutes smallint not null default 30;
+
+alter table public.business_hours
+  add constraint business_hours_slot_interval_minutes_check
+    check (slot_interval_minutes in (30, 60, 90, 120));
+
+alter table public.business_hours
   add column if not exists available_times time[] not null default '{}'::time[];
 
 -- Preserve the existing half-hour schedule as an explicit list of start times.
@@ -38,7 +46,7 @@ begin
     from jsonb_array_elements(p_hours) as entries(item)
     where jsonb_typeof(item->'available_times') is distinct from 'array'
       or coalesce(jsonb_array_length(item->'available_times'), 0) = 0
-      or (item->>'slot_interval_minutes')::smallint not in (15, 30, 60)
+      or (item->>'slot_interval_minutes')::smallint not in (30, 60, 90, 120)
       or (item->>'weekday')::smallint not between 0 and 6
   ) then
     raise exception 'Invalid business schedule';
@@ -59,8 +67,14 @@ begin
     cross join lateral jsonb_array_elements_text(
       entries.item->'available_times'
     ) as slots(value)
+    cross join lateral (
+      select min(schedule_time.value::time) as first_time
+      from jsonb_array_elements_text(
+        entries.item->'available_times'
+      ) as schedule_time(value)
+    ) as bounds
     where mod(
-      (extract(epoch from slots.value::time)::integer / 60),
+      extract(epoch from (slots.value::time - bounds.first_time))::integer / 60,
       (entries.item->>'slot_interval_minutes')::integer
     ) <> 0
   ) or exists (
@@ -156,7 +170,7 @@ begin
     from jsonb_array_elements(p_hours) as entries(item)
     where jsonb_typeof(item->'available_times') is distinct from 'array'
       or coalesce(jsonb_array_length(item->'available_times'), 0) = 0
-      or (item->>'slot_interval_minutes')::smallint not in (15, 30, 60)
+      or (item->>'slot_interval_minutes')::smallint not in (30, 60, 90, 120)
       or (item->>'weekday')::smallint not between 0 and 6
   ) then
     raise exception 'Invalid barber schedule';
@@ -177,8 +191,14 @@ begin
     cross join lateral jsonb_array_elements_text(
       entries.item->'available_times'
     ) as slots(value)
+    cross join lateral (
+      select min(schedule_time.value::time) as first_time
+      from jsonb_array_elements_text(
+        entries.item->'available_times'
+      ) as schedule_time(value)
+    ) as bounds
     where mod(
-      (extract(epoch from slots.value::time)::integer / 60),
+      extract(epoch from (slots.value::time - bounds.first_time))::integer / 60,
       (entries.item->>'slot_interval_minutes')::integer
     ) <> 0
   ) or exists (
