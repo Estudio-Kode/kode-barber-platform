@@ -256,56 +256,6 @@ insert into public.platform_plans (
   0
 );
 
-insert into public.businesses (
-  id, slug, name, owner_name, email, whatsapp, status, plan_id
-) values (
-  '11111111-1111-4111-8111-111111111111',
-  'ziah-cortes',
-  'Ziah Cortes',
-  '',
-  '',
-  '5531993253121',
-  'active',
-  '22222222-2222-4222-8222-222222222222'
-);
-
-insert into public.business_services (
-  business_id, name, category, price_cents, duration_minutes, direct_only, sort_order
-) values
-  ('11111111-1111-4111-8111-111111111111', 'Corte', 'corte_barba', 3000, 30, false, 0),
-  ('11111111-1111-4111-8111-111111111111', 'Barba', 'corte_barba', 2000, 30, false, 1),
-  ('11111111-1111-4111-8111-111111111111', 'Corte + Barba', 'corte_barba', 5000, 60, false, 2),
-  ('11111111-1111-4111-8111-111111111111', 'Sobrancelha sem cortar', 'acabamento', 1000, 15, true, 3),
-  ('11111111-1111-4111-8111-111111111111', 'Pezinho sem cortar', 'acabamento', 1000, 15, false, 4),
-  ('11111111-1111-4111-8111-111111111111', 'Escova', 'acabamento', 1500, 30, false, 5),
-  ('11111111-1111-4111-8111-111111111111', 'Luzes', 'quimica_cor', 4000, 60, false, 6),
-  ('11111111-1111-4111-8111-111111111111', 'Luzes alinhadas', 'quimica_cor', 4500, 60, false, 7),
-  ('11111111-1111-4111-8111-111111111111', 'Platinado/Cabelo colorido', 'quimica_cor', 6500, 90, false, 8),
-  ('11111111-1111-4111-8111-111111111111', 'Tintura/pigmentação (cor preta)', 'quimica_cor', 2000, 30, false, 9),
-  ('11111111-1111-4111-8111-111111111111', 'Tintura/pigmentação (castanho escuro/outros)', 'quimica_cor', 2500, 30, false, 10),
-  ('11111111-1111-4111-8111-111111111111', 'Progressiva', 'quimica_cor', 6000, 90, false, 11),
-  ('11111111-1111-4111-8111-111111111111', 'Botox', 'quimica_cor', 4500, 90, true, 12),
-  ('11111111-1111-4111-8111-111111111111', 'Relaxamento', 'quimica_cor', 2500, 60, false, 13);
-
-insert into public.service_addons (business_id, service_id, name, price_cents)
-select '11111111-1111-4111-8111-111111111111', id, 'Sobrancelha', 500
-from public.business_services
-where business_id = '11111111-1111-4111-8111-111111111111'
-  and name in ('Corte', 'Corte + Barba');
-
-insert into public.service_addons (business_id, service_id, name, price_cents)
-select '11111111-1111-4111-8111-111111111111', id, 'Sobrancelha', 1000
-from public.business_services
-where business_id = '11111111-1111-4111-8111-111111111111'
-  and name = 'Barba';
-
-insert into public.business_hours (business_id, weekday, open_time, close_time, sort_order)
-select '11111111-1111-4111-8111-111111111111', days.weekday, hours.open_time::time,
-  hours.close_time::time, hours.sort_order
-from generate_series(1, 5) as days(weekday)
-cross join (values ('08:00', '12:00', 0), ('14:00', '20:00', 1))
-  as hours(open_time, close_time, sort_order);
-
 do $$
 declare
   table_name text;

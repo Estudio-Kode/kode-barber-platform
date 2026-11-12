@@ -1,17 +1,17 @@
 # Kode Barber Platform — Agendamento para barbearias
 
-Plataforma em evolução para agendamento e operação de barbearias, desenvolvida pela **Kode** com **Next.js (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL)**. O tenant inicial é a **Ziah Cortes**.
+Plataforma em evolução para agendamento e operação de barbearias, desenvolvida pela **Kode** com **Next.js (App Router) + TypeScript + Tailwind CSS + Supabase (PostgreSQL)**.
 
 ---
 
 ## Estrutura do Projeto
 
 ```
-PROJETO_ZIAH/
+KODE_BARBER/
 ├── src/
 │   ├── app/
-│   │   ├── page.tsx                        # Interface de agendamento do cliente (Mobile + Desktop)
-│   │   ├── admin/page.tsx                  # Painel administrativo do barbeiro (/admin)
+│   │   ├── page.tsx                        # Página inicial da plataforma
+│   │   ├── admin/page.tsx                  # Aviso de acesso da equipe em preparação
 │   │   ├── platform/page.tsx               # Central Kode para administrar barbearias e planos (/platform)
 │   │   ├── layout.tsx                      # Layout raiz + suporte a tema claro/escuro
 │   │   ├── globals.css                     # Design tokens (Modern Barber Dark/Gold & Light)
@@ -29,7 +29,7 @@ PROJETO_ZIAH/
 │   │           ├── businesses/[id]/route.ts
 │   │           └── plans/route.ts
 │   ├── components/
-│   │   ├── BrandLogo.tsx                   # Logo vetorial Ziah Cortes
+│   │   ├── BrandLogo.tsx                   # Identidade visual Kode Barber
 │   │   ├── ThemeToggle.tsx                 # Alternador de tema Claro / Escuro
 │   │   └── KodeFooter.tsx                  # Assinatura "created by kode"
 │   ├── config/
@@ -42,9 +42,7 @@ PROJETO_ZIAH/
 │       └── telegram.ts                     # Disparo assíncrono de notificações no Telegram
 ├── .env.example                            # Modelo das variáveis de ambiente
 ├── .env.local                              # Segredos locais (ignorado pelo Git)
-├── supabase/migrations/                    # Esquema multiempresa e dados iniciais
-├── security-test.mjs                       # Bateria automatizada de auditoria de segurança
-├── test-suite.mjs                          # Bateria automatizada de testes de integração
+├── supabase/migrations/                    # Esquema multiempresa e ajustes de dados
 └── package.json
 ```
 
@@ -65,39 +63,35 @@ PROJETO_ZIAH/
    ```
 
 4. Acesse no navegador:
-   - **Cliente:** [http://localhost:3000](http://localhost:3000)
-   - **Painel do Barbeiro:** [http://localhost:3000/admin](http://localhost:3000/admin)
+   - **Página inicial:** [http://localhost:3000](http://localhost:3000)
    - **Central da Plataforma:** [http://localhost:3000/platform](http://localhost:3000/platform)
 
-## Primeira configuração multiempresa
+## Configuração multiempresa
 
-1. Aplique `supabase/migrations/202611120001_platform_foundation.sql` em um projeto Supabase vazio.
-   A migração cria os planos, barbearias, serviços, equipe, horários, clientes, agendamentos,
-   catálogo e assinaturas de clientes. A barbearia existente é cadastrada como `ziah-cortes`.
-2. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e um
+1. Em um Supabase novo, aplique as migrações em ordem: primeiro
+   `supabase/migrations/202611120001_platform_foundation.sql`, depois
+   `supabase/migrations/202611120002_remove_ziah_business.sql`.
+   A primeira cria as tabelas e um plano inicial sem barbearias de demonstração; a segunda
+   também remove a barbearia de demonstração de ambientes em que a primeira migração já havia sido aplicada.
+   A exclusão da empresa remove em cascata os dados vinculados a ela.
+2. Se a primeira migração já foi aplicada, execute somente
+   `supabase/migrations/202611120002_remove_ziah_business.sql` no SQL Editor do Supabase.
+3. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e um
    `PLATFORM_SESSION_SECRET` aleatório com pelo menos 32 caracteres no `.env.local`.
-   Use credenciais diferentes das do painel do barbeiro.
-3. Acesse `/platform` para cadastrar barbearias, configurar os planos e provisionar o acesso.
+4. Acesse `/platform` para cadastrar barbearias e configurar os planos.
 
-Esta primeira etapa oferece o painel central e o esquema isolado por `business_id`.
-O agendamento atual continua ligado ao tenant `ziah-cortes`; páginas públicas por slug
-(`/b/<slug>`) e os módulos operacionais por tenant serão conectados em fases seguintes.
-O banco anterior foi excluído, portanto a migração cria a estrutura do zero e não recupera dados.
+Esta etapa oferece a central da plataforma e o esquema isolado por `business_id`.
+O agendamento público por barbearia, o provisionamento dos acessos da equipe e os módulos
+operacionais ainda serão conectados em fases seguintes.
 
 ---
 
-## Testes Automatizados
+## Validação local
 
-- **Auditoria de Segurança (9 verificações):**
-  ```bash
-  node --env-file=.env.local security-test.mjs
-  ```
-
-- **Testes de Integração Ponta a Ponta (12 cenários com Supabase):**
-  ```bash
-  npm run build
-  node --env-file=.env.local test-suite.mjs
-  ```
+```bash
+npm run lint
+npm run build
+```
 
 ---
 
@@ -111,6 +105,9 @@ O banco anterior foi excluído, portanto a migração cria a estrutura do zero e
    - `BARBER_ADMIN_USER`
    - `BARBER_ADMIN_PASSWORD`
    - `BARBER_SESSION_SECRET`
+   - `PLATFORM_ADMIN_USER`
+   - `PLATFORM_ADMIN_PASSWORD`
+   - `PLATFORM_SESSION_SECRET`
    - `BARBER_TELEGRAM_ENABLED`
    - `BARBER_TELEGRAM_TOKEN`
    - `BARBER_TELEGRAM_CHAT_IDS`

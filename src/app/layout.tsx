@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ziah Cortes — Agendamento Online",
+  title: "Kode Barber — Agendamento para barbearias",
   description:
-    "Agende seu corte, barba e procedimentos com praticidade na Ziah Cortes.",
+    "Plataforma de agendamento e gestão para barbearias independentes.",
 };
 
 export default function RootLayout({

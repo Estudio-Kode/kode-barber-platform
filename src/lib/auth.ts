@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
 
-export const ADMIN_COOKIE_NAME = "ziah_admin_session";
+export const ADMIN_COOKIE_NAME = "barber_admin_session";
 export const PLATFORM_ADMIN_COOKIE_NAME = "kode_platform_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 8; // 8 horas
 

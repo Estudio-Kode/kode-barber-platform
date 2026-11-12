@@ -6,7 +6,7 @@ export function BrandLogo({ className = "h-10 w-auto" }: { className?: string })
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 640 170"
       role="img"
-      aria-label="Ziah Cortes"
+      aria-label="Kode Barber"
       className={className}
     >
       <g fill="currentColor" stroke="currentColor">
@@ -20,7 +20,7 @@ export function BrandLogo({ className = "h-10 w-auto" }: { className?: string })
           letterSpacing="16"
           stroke="none"
         >
-          ZIAH CORTES
+          KODE BARBER
         </text>
 
         {/* Linhas divisórias em destaque âmbar */}
