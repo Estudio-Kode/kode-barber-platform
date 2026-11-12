@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedBarberSession } from "@/lib/auth";
 import { isValidSlotTime, parseIsoDateLocal } from "@/lib/domain";
 import { readSafeJson } from "@/lib/request-guard";
 import {
@@ -9,7 +9,8 @@ import {
 } from "@/lib/supabase-server";
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -33,7 +34,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const taken = await dbHasAppointmentAt(dateStr, timeStr);
+    const taken = await dbHasAppointmentAt(
+      dateStr,
+      timeStr,
+      session.business_id
+    );
     if (taken) {
       return NextResponse.json(
         {
@@ -44,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await dbBlockSlot(dateStr, timeStr);
+    await dbBlockSlot(dateStr, timeStr, session.business_id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[POST /api/admin/blocks]", err);
@@ -56,7 +61,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -80,7 +86,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   try {
-    await dbUnblockSlot(dateStr, timeStr);
+    await dbUnblockSlot(dateStr, timeStr, session.business_id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[DELETE /api/admin/blocks]", err);

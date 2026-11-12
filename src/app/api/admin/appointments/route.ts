@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedBarberSession } from "@/lib/auth";
 import { getTodayIso, parseIsoDateLocal } from "@/lib/domain";
 import {
   dbGetAllAppointments,
@@ -7,7 +7,8 @@ import {
 } from "@/lib/supabase-server";
 
 export async function GET(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -18,8 +19,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const appointments = dateStr
-      ? await dbGetAppointmentsByDate(dateStr)
-      : await dbGetAllAppointments();
+      ? await dbGetAppointmentsByDate(dateStr, session.business_id)
+      : await dbGetAllAppointments(session.business_id);
 
     return NextResponse.json({
       appointments,

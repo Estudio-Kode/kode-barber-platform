@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedBarberSession } from "@/lib/auth";
 import { MAX_NOTE_LEN, parseIsoDateLocal } from "@/lib/domain";
 import { readSafeJson } from "@/lib/request-guard";
 import { dbGetDayNote, dbSaveDayNote } from "@/lib/supabase-server";
 
 export async function GET(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const note = await dbGetDayNote(dateStr);
+    const note = await dbGetDayNote(dateStr, session.business_id);
     return NextResponse.json({ date: dateStr, note });
   } catch (err) {
     console.error("[GET /api/admin/notes]", err);
@@ -27,7 +28,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -49,7 +51,7 @@ export async function POST(req: NextRequest) {
   const note = rawNote.replace(/\x00/g, "").slice(0, MAX_NOTE_LEN);
 
   try {
-    await dbSaveDayNote(dateStr, note);
+    await dbSaveDayNote(dateStr, note, session.business_id);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error("[POST /api/admin/notes]", err);

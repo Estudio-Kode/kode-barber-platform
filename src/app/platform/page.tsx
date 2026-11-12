@@ -6,11 +6,16 @@ import type {
   PlatformFeature,
   PlatformPlanRow,
 } from "@/lib/supabase-server";
+import {
+  isStrongPassword,
+  PASSWORD_REQUIREMENTS,
+} from "@/lib/password-policy";
 
 type Section = "overview" | "businesses" | "plans";
 type PlatformBusinessStatus = PlatformBusinessRow["status"];
 type DialogState =
   | { kind: "business"; item: PlatformBusinessRow | null }
+  | { kind: "admin"; item: PlatformBusinessRow }
   | { kind: "plan"; item: PlatformPlanRow | null }
   | null;
 
@@ -304,6 +309,164 @@ function BusinessDialog({
               type="submit"
             >
               {saving ? "Salvando..." : business ? "Salvar alterações" : "Cadastrar"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function BusinessAdminDialog({
+  business,
+  saving,
+  error,
+  onClose,
+  onSave,
+}: {
+  business: PlatformBusinessRow;
+  saving: boolean;
+  error: string;
+  onClose: () => void;
+  onSave: (values: {
+    email: string;
+    full_name: string;
+    password: string;
+  }) => void;
+}) {
+  const existingAdmin = business.business_members?.find(
+    (member) => member.role === "owner" && member.active
+  );
+  const [email, setEmail] = useState(
+    existingAdmin?.login_email || business.email || ""
+  );
+  const [fullName, setFullName] = useState(business.owner_name);
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [formError, setFormError] = useState("");
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!isStrongPassword(password)) {
+      setFormError(PASSWORD_REQUIREMENTS);
+      return;
+    }
+    if (password !== confirmPassword) {
+      setFormError("As senhas informadas não correspondem.");
+      return;
+    }
+    setFormError("");
+    onSave({ email: email.trim(), full_name: fullName.trim(), password });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        aria-labelledby="admin-dialog-title"
+        aria-modal="true"
+        className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#101216] p-6 shadow-2xl sm:p-8"
+        role="dialog"
+      >
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-300">
+              Acesso da empresa
+            </p>
+            <h2
+              className="mt-2 text-2xl font-semibold tracking-tight text-white"
+              id="admin-dialog-title"
+            >
+              Configurar administrador
+            </h2>
+            <p className="mt-2 text-sm text-zinc-500">{business.name}</p>
+          </div>
+          <button
+            aria-label="Fechar"
+            className="rounded-lg px-2 py-1 text-xl text-zinc-500 hover:bg-white/5 hover:text-white"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        </div>
+
+        <form className="space-y-4" onSubmit={submit}>
+          <label className={labelClass}>
+            Nome do administrador
+            <input
+              autoComplete="name"
+              className={inputClass}
+              onChange={(event) => setFullName(event.target.value)}
+              required
+              value={fullName}
+            />
+          </label>
+          <label className={labelClass}>
+            E-mail de acesso
+            <input
+              autoComplete="username"
+              className={inputClass}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+              type="email"
+              value={email}
+            />
+          </label>
+          <label className={labelClass}>
+            Senha temporária
+            <input
+              autoComplete="new-password"
+              className={inputClass}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+              type="password"
+              value={password}
+            />
+            <span className="mt-1 block text-xs font-normal text-zinc-500">
+              {PASSWORD_REQUIREMENTS}
+            </span>
+          </label>
+          <label className={labelClass}>
+            Confirmar senha temporária
+            <input
+              autoComplete="new-password"
+              className={inputClass}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              required
+              type="password"
+              value={confirmPassword}
+            />
+          </label>
+          <p className="rounded-xl border border-amber-400/15 bg-amber-400/[0.05] px-3.5 py-3 text-xs leading-5 text-amber-100/80">
+            A senha será solicitada apenas uma vez e não será enviada por
+            e-mail. Entregue-a diretamente ao responsável, que deverá
+            substituí-la no primeiro acesso.
+          </p>
+          {(error || formError) && (
+            <p className="rounded-xl border border-rose-400/20 bg-rose-400/10 px-3.5 py-3 text-sm text-rose-300">
+              {error || formError}
+            </p>
+          )}
+          <div className="flex justify-end gap-3 border-t border-white/8 pt-5">
+            <button
+              className="rounded-xl px-4 py-2.5 text-sm font-medium text-zinc-400 hover:bg-white/5 hover:text-white"
+              onClick={onClose}
+              type="button"
+            >
+              Voltar
+            </button>
+            <button
+              className="rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={saving}
+              type="submit"
+            >
+              {saving ? "Configurando..." : "Salvar acesso"}
             </button>
           </div>
         </form>
@@ -745,6 +908,34 @@ export default function PlatformPage() {
     } catch (error) {
       setDialogError(
         error instanceof Error ? error.message : "Não foi possível salvar."
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveBusinessAdmin(values: {
+    email: string;
+    full_name: string;
+    password: string;
+  }) {
+    if (!dialog || dialog.kind !== "admin") return;
+    setSaving(true);
+    setDialogError("");
+    try {
+      await requestJson(`/api/platform/businesses/${dialog.item.id}/admin`, {
+        method: "PUT",
+        body: JSON.stringify(values),
+      });
+      await loadData();
+      setDialog(null);
+      setNotice(`Acesso de ${values.email} configurado. Entregue a senha temporária diretamente ao responsável.`);
+      window.setTimeout(() => setNotice(""), 6000);
+    } catch (error) {
+      setDialogError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível configurar o acesso."
       );
     } finally {
       setSaving(false);
@@ -1257,16 +1448,32 @@ export default function PlatformPage() {
                             {formatDate(business.created_at)}
                           </td>
                           <td className="px-5 py-4 text-right">
-                            <button
-                              className="rounded-lg border border-white/8 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-amber-300/30 hover:text-amber-200"
-                              onClick={() => {
-                                setDialogError("");
-                                setDialog({ kind: "business", item: business });
-                              }}
-                              type="button"
-                            >
-                              Editar
-                            </button>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                className="rounded-lg border border-white/8 px-3 py-2 text-xs font-medium text-zinc-300 transition hover:border-amber-300/30 hover:text-amber-200"
+                                onClick={() => {
+                                  setDialogError("");
+                                  setDialog({ kind: "business", item: business });
+                                }}
+                                type="button"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                className="rounded-lg border border-amber-300/20 px-3 py-2 text-xs font-medium text-amber-200 transition hover:bg-amber-300/10"
+                                onClick={() => {
+                                  setDialogError("");
+                                  setDialog({ kind: "admin", item: business });
+                                }}
+                                type="button"
+                              >
+                                {business.business_members?.some(
+                                  (member) => member.role === "owner" && member.active
+                                )
+                                  ? "Redefinir acesso"
+                                  : "Configurar acesso"}
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1433,6 +1640,15 @@ export default function PlatformPage() {
           onClose={() => setDialog(null)}
           onSave={saveBusiness}
           plans={plans}
+          saving={saving}
+        />
+      )}
+      {dialog?.kind === "admin" && (
+        <BusinessAdminDialog
+          business={dialog.item}
+          error={dialogError}
+          onClose={() => setDialog(null)}
+          onSave={saveBusinessAdmin}
           saving={saving}
         />
       )}

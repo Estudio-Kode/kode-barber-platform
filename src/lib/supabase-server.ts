@@ -67,6 +67,46 @@ export interface PlatformBusinessRow {
     PlatformPlanRow,
     "id" | "name" | "price_cents" | "max_barbers" | "features"
   > | null;
+  business_members?: Array<{
+    login_email: string | null;
+    role: "owner" | "manager" | "barber";
+    active: boolean;
+  }>;
+}
+
+export interface BusinessAdminAccess {
+  user_id: string;
+  business_id: string;
+  login_email: string;
+  must_change_password: boolean;
+  business_name: string;
+  business_slug: string;
+  business_status: "setup" | "active" | "suspended";
+}
+
+interface SupabaseAuthUser {
+  id: string;
+  email: string;
+  user_metadata?: Record<string, unknown>;
+}
+
+async function supabaseAuthRequest<T>(
+  path: string,
+  init?: RequestInit
+): Promise<{ response: Response; data: T | null }> {
+  const { url, secretKey } = getSupabaseEnv();
+  const response = await fetch(`${url}/auth/v1/${path}`, {
+    ...init,
+    headers: {
+      apikey: secretKey,
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+      ...init?.headers,
+    },
+    cache: "no-store",
+  });
+  const data = (await response.json().catch(() => null)) as T | null;
+  return { response, data };
 }
 
 async function platformDbRows<T>(
@@ -96,8 +136,257 @@ export async function dbGetPlatformPlans(): Promise<PlatformPlanRow[]> {
 
 export async function dbGetPlatformBusinesses(): Promise<PlatformBusinessRow[]> {
   return platformDbRows<PlatformBusinessRow>(
-    "businesses?select=id,slug,name,owner_name,email,whatsapp,logo_url,status,plan_id,plan_price_cents,created_at,updated_at,platform_plans(id,name,price_cents,max_barbers,features)&order=created_at.desc"
+    "businesses?select=id,slug,name,owner_name,email,whatsapp,logo_url,status,plan_id,plan_price_cents,created_at,updated_at,platform_plans(id,name,price_cents,max_barbers,features),business_members(login_email,role,active)&order=created_at.desc"
   );
+}
+
+export async function dbGetBusinessAdminAccess(
+  businessId: string,
+  userId: string
+): Promise<BusinessAdminAccess | null> {
+  const rows = await platformDbRows<{
+    auth_user_id: string;
+    business_id: string;
+    login_email: string | null;
+    must_change_password: boolean;
+    businesses: {
+      name: string;
+      slug: string;
+      status: BusinessAdminAccess["business_status"];
+    };
+  }>(
+    `business_members?business_id=eq.${encodeURIComponent(businessId)}&auth_user_id=eq.${encodeURIComponent(userId)}&role=eq.owner&active=eq.true&select=auth_user_id,business_id,login_email,must_change_password,businesses!inner(name,slug,status)&limit=1`
+  );
+  const row = rows[0];
+  if (!row?.login_email || !row.businesses) return null;
+  return {
+    user_id: row.auth_user_id,
+    business_id: row.business_id,
+    login_email: row.login_email,
+    must_change_password: row.must_change_password,
+    business_name: row.businesses.name,
+    business_slug: row.businesses.slug,
+    business_status: row.businesses.status,
+  };
+}
+
+export async function dbGetBusinessAdminAccessesByUser(
+  userId: string
+): Promise<BusinessAdminAccess[]> {
+  const rows = await platformDbRows<{
+    auth_user_id: string;
+    business_id: string;
+    login_email: string | null;
+    must_change_password: boolean;
+    businesses: {
+      name: string;
+      slug: string;
+      status: BusinessAdminAccess["business_status"];
+    };
+  }>(
+    `business_members?auth_user_id=eq.${encodeURIComponent(userId)}&role=eq.owner&active=eq.true&select=auth_user_id,business_id,login_email,must_change_password,businesses!inner(name,slug,status)`
+  );
+  return rows.flatMap((row) =>
+    row.login_email && row.businesses
+      ? [
+          {
+            user_id: row.auth_user_id,
+            business_id: row.business_id,
+            login_email: row.login_email,
+            must_change_password: row.must_change_password,
+            business_name: row.businesses.name,
+            business_slug: row.businesses.slug,
+            business_status: row.businesses.status,
+          },
+        ]
+      : []
+  );
+}
+
+export async function dbProvisionBusinessAdmin(input: {
+  businessId: string;
+  email: string;
+  password: string;
+  fullName: string;
+}): Promise<void> {
+  const memberRows = await platformDbRows<{
+    id: string;
+    auth_user_id: string;
+    login_email: string | null;
+    must_change_password: boolean;
+  }>(
+    `business_members?business_id=eq.${encodeURIComponent(input.businessId)}&role=eq.owner&active=eq.true&select=id,auth_user_id,login_email,must_change_password&limit=1`
+  );
+  const existing = memberRows[0];
+
+  if (existing) {
+    const updatedMembers = await platformDbRows<{ id: string }>(
+      `business_members?id=eq.${encodeURIComponent(existing.id)}&select=id`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          login_email: input.email,
+          must_change_password: true,
+        }),
+      }
+    );
+    if (!updatedMembers[0]) {
+      throw new Error("Não foi possível atualizar o acesso da barbearia.");
+    }
+
+    try {
+      const { response, data } = await supabaseAuthRequest<SupabaseAuthUser>(
+        `admin/users/${encodeURIComponent(existing.auth_user_id)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify({
+            email: input.email,
+            password: input.password,
+            email_confirm: true,
+            user_metadata: {
+              full_name: input.fullName,
+              business_id: input.businessId,
+            },
+          }),
+        }
+      );
+      if (!response.ok || !data?.id) {
+        throw new Error(
+          `SUPABASE_AUTH_${response.status}: não foi possível atualizar a conta Auth.`
+        );
+      }
+    } catch (error) {
+      await platformDbRows(
+        `business_members?id=eq.${encodeURIComponent(existing.id)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            login_email: existing.login_email,
+            must_change_password: existing.must_change_password,
+          }),
+        }
+      );
+      throw error;
+    }
+    return;
+  }
+
+  const { response, data } = await supabaseAuthRequest<{
+    user?: SupabaseAuthUser;
+    id?: string;
+  }>("admin/users", {
+    method: "POST",
+    body: JSON.stringify({
+      email: input.email,
+      password: input.password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: input.fullName,
+        business_id: input.businessId,
+      },
+    }),
+  });
+  if (!response.ok) {
+    const authError = data as { msg?: string; message?: string } | null;
+    throw new Error(
+      `SUPABASE_AUTH_${response.status}: ${authError?.msg || authError?.message || "Não foi possível criar a conta."}`
+    );
+  }
+  const userId = data?.user?.id || data?.id;
+  if (!userId) {
+    throw new Error("O Supabase Auth não retornou o usuário criado.");
+  }
+
+  try {
+    const memberships = await platformDbRows<{ id: string }>(
+      "business_members?select=id",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          business_id: input.businessId,
+          auth_user_id: userId,
+          login_email: input.email,
+          must_change_password: true,
+          role: "owner",
+          active: true,
+        }),
+      }
+    );
+    if (!memberships[0]) {
+      throw new Error("O Supabase não retornou o vínculo do administrador.");
+    }
+  } catch (error) {
+    const rollback = await supabaseAuthRequest(
+      `admin/users/${encodeURIComponent(userId)}`,
+      { method: "DELETE" }
+    );
+    if (!rollback.response.ok) {
+      throw new Error(
+        `Não foi possível criar o vínculo e remover o usuário Auth criado (${rollback.response.status}).`
+      );
+    }
+    throw error;
+  }
+}
+
+export async function dbSignInBusinessAdmin(
+  email: string,
+  password: string
+): Promise<SupabaseAuthUser | null> {
+  const { response, data } = await supabaseAuthRequest<{
+    user?: SupabaseAuthUser;
+  }>("token?grant_type=password", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+  if (response.status === 400 || response.status === 401) return null;
+  if (!response.ok) {
+    throw new Error(`Falha no login do Supabase Auth (${response.status}).`);
+  }
+  return data?.user ?? null;
+}
+
+export async function dbChangeBusinessAdminPassword(input: {
+  businessId: string;
+  userId: string;
+  password: string;
+}): Promise<void> {
+  const access = await dbGetBusinessAdminAccess(
+    input.businessId,
+    input.userId
+  );
+  if (!access || access.business_status === "suspended") {
+    throw new Error("Acesso da barbearia indisponível.");
+  }
+
+  const { response } = await supabaseAuthRequest(
+    `admin/users/${encodeURIComponent(input.userId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        password: input.password,
+        user_metadata: {
+          business_id: input.businessId,
+        },
+      }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Não foi possível atualizar a senha no Supabase Auth (${response.status}).`
+    );
+  }
+
+  const rows = await platformDbRows<{ id: string }>(
+    `business_members?business_id=eq.${encodeURIComponent(input.businessId)}&auth_user_id=eq.${encodeURIComponent(input.userId)}&role=eq.owner&select=id`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ must_change_password: false }),
+    }
+  );
+  if (!rows[0]) {
+    throw new Error("Não foi possível concluir a ativação da nova senha.");
+  }
 }
 
 export async function dbCreatePlatformBusiness(input: {
@@ -222,12 +511,13 @@ export function normalizeDbTime(t: string): string {
 }
 
 export async function dbGetAppointmentsByDate(
-  dateStr: string
+  dateStr: string,
+  businessId = LEGACY_BUSINESS_ID
 ): Promise<Array<{ id: number; phone: string; service: string; date: string; time: string; name: string; created_at: string }>> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?date=eq.${encodeURIComponent(
     dateStr
-  )}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,created_at,clients(name)&order=time.asc`;
+  )}&business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,clients(name)&order=time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -249,11 +539,13 @@ export async function dbGetAppointmentsByDate(
   }));
 }
 
-export async function dbGetAllAppointments(): Promise<
+export async function dbGetAllAppointments(
+  businessId = LEGACY_BUSINESS_ID
+): Promise<
   Array<{ id: number; phone: string; service: string; date: string; time: string; name: string; created_at: string }>
 > {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,created_at,clients(name)&order=date.asc,time.asc`;
+  const endpoint = `${url}/rest/v1/appointments?business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,created_at,clients(name)&order=date.asc,time.asc`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -275,11 +567,14 @@ export async function dbGetAllAppointments(): Promise<
   }));
 }
 
-export async function dbGetBlockedTimes(dateStr: string): Promise<Set<string>> {
+export async function dbGetBlockedTimes(
+  dateStr: string,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<Set<string>> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/blocked_slots?date=eq.${encodeURIComponent(
     dateStr
-  )}&business_id=eq.${LEGACY_BUSINESS_ID}&barber_id=is.null&select=time`;
+  )}&business_id=eq.${encodeURIComponent(businessId)}&barber_id=is.null&select=time`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -391,7 +686,10 @@ export async function dbInsertAppointment(params: {
   return { ok: true, id: rows[0]?.id ?? 0 };
 }
 
-export async function dbGetAppointmentById(id: number): Promise<{
+export async function dbGetAppointmentById(
+  id: number,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<{
   id: number;
   phone: string;
   service: string;
@@ -400,7 +698,7 @@ export async function dbGetAppointmentById(id: number): Promise<{
   name: string;
 } | null> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id,phone,service,date,time,clients(name)`;
+  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${encodeURIComponent(businessId)}&select=id,phone,service,date,time,clients(name)`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
@@ -420,9 +718,12 @@ export async function dbGetAppointmentById(id: number): Promise<{
   };
 }
 
-export async function dbDeleteAppointmentById(id: number): Promise<void> {
+export async function dbDeleteAppointmentById(
+  id: number,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<void> {
   const { url } = getSupabaseEnv();
-  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${LEGACY_BUSINESS_ID}`;
+  const endpoint = `${url}/rest/v1/appointments?id=eq.${id}&business_id=eq.${encodeURIComponent(businessId)}`;
 
   const res = await fetch(endpoint, {
     method: "DELETE",
@@ -436,23 +737,33 @@ export async function dbDeleteAppointmentById(id: number): Promise<void> {
 
 export async function dbHasAppointmentAt(
   dateStr: string,
-  timeStr: string
+  timeStr: string,
+  businessId = LEGACY_BUSINESS_ID
 ): Promise<boolean> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/appointments?date=eq.${encodeURIComponent(
     dateStr
-  )}&time=eq.${encodeURIComponent(timeStr)}&business_id=eq.${LEGACY_BUSINESS_ID}&select=id`;
+  )}&time=eq.${encodeURIComponent(timeStr)}&business_id=eq.${encodeURIComponent(businessId)}&select=id`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
     cache: "no-store",
   });
-  if (!res.ok) return false;
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(
+      `Erro ao verificar agendamento existente: ${res.status} ${errText}`
+    );
+  }
   const rows: Array<{ id: number }> = await res.json();
   return rows.length > 0;
 }
 
-export async function dbBlockSlot(dateStr: string, timeStr: string): Promise<void> {
+export async function dbBlockSlot(
+  dateStr: string,
+  timeStr: string,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<void> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/blocked_slots?on_conflict=business_id,barber_id,date,time`;
 
@@ -462,7 +773,7 @@ export async function dbBlockSlot(dateStr: string, timeStr: string): Promise<voi
       Prefer: "resolution=ignore-duplicates,return=minimal",
     }),
     body: JSON.stringify({
-      business_id: LEGACY_BUSINESS_ID,
+      business_id: businessId,
       barber_id: null,
       date: dateStr,
       time: timeStr,
@@ -474,11 +785,15 @@ export async function dbBlockSlot(dateStr: string, timeStr: string): Promise<voi
   }
 }
 
-export async function dbUnblockSlot(dateStr: string, timeStr: string): Promise<void> {
+export async function dbUnblockSlot(
+  dateStr: string,
+  timeStr: string,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<void> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/blocked_slots?date=eq.${encodeURIComponent(
     dateStr
-  )}&time=eq.${encodeURIComponent(timeStr)}&business_id=eq.${LEGACY_BUSINESS_ID}&barber_id=is.null`;
+  )}&time=eq.${encodeURIComponent(timeStr  )}&business_id=eq.${encodeURIComponent(businessId)}&barber_id=is.null`;
 
   const res = await fetch(endpoint, {
     method: "DELETE",
@@ -490,33 +805,47 @@ export async function dbUnblockSlot(dateStr: string, timeStr: string): Promise<v
   }
 }
 
-export async function dbGetDayNote(dateStr: string): Promise<string> {
+export async function dbGetDayNote(
+  dateStr: string,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<string> {
   const { url } = getSupabaseEnv();
   const endpoint = `${url}/rest/v1/day_notes?date=eq.${encodeURIComponent(
     dateStr
-  )}&business_id=eq.${LEGACY_BUSINESS_ID}&select=note`;
+  )}&business_id=eq.${encodeURIComponent(businessId)}&select=note`;
 
   const res = await fetch(endpoint, {
     headers: buildHeaders(),
     cache: "no-store",
   });
-  if (!res.ok) return "";
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Erro ao consultar observação: ${res.status} ${errText}`);
+  }
   const rows: Array<{ note: string }> = await res.json();
   return rows[0]?.note ?? "";
 }
 
-export async function dbSaveDayNote(dateStr: string, note: string): Promise<void> {
+export async function dbSaveDayNote(
+  dateStr: string,
+  note: string,
+  businessId = LEGACY_BUSINESS_ID
+): Promise<void> {
   const { url } = getSupabaseEnv();
   const cleaned = note.replace(/\x00/g, "").slice(0, 2000);
 
   if (!cleaned.trim()) {
     const delEndpoint = `${url}/rest/v1/day_notes?date=eq.${encodeURIComponent(
       dateStr
-    )}&business_id=eq.${LEGACY_BUSINESS_ID}`;
-    await fetch(delEndpoint, {
+    )}&business_id=eq.${encodeURIComponent(businessId)}`;
+    const res = await fetch(delEndpoint, {
       method: "DELETE",
       headers: buildHeaders({ Prefer: "return=minimal" }),
     });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Erro ao remover observação: ${res.status} ${errText}`);
+    }
     return;
   }
 
@@ -527,7 +856,7 @@ export async function dbSaveDayNote(dateStr: string, note: string): Promise<void
       Prefer: "resolution=merge-duplicates,return=minimal",
     }),
     body: JSON.stringify({
-      business_id: LEGACY_BUSINESS_ID,
+      business_id: businessId,
       date: dateStr,
       note: cleaned,
       updated_at: new Date().toISOString(),

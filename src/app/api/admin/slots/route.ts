@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllSlots, getAppointmentPrice } from "@/config/business";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedBarberSession } from "@/lib/auth";
 import { parseIsoDateLocal, slotIsPast } from "@/lib/domain";
 import {
   dbGetAppointmentsByDate,
@@ -8,7 +8,8 @@ import {
 } from "@/lib/supabase-server";
 
 export async function GET(req: NextRequest) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -19,8 +20,8 @@ export async function GET(req: NextRequest) {
 
   try {
     const [appts, blockedSet] = await Promise.all([
-      dbGetAppointmentsByDate(dateStr),
-      dbGetBlockedTimes(dateStr),
+      dbGetAppointmentsByDate(dateStr, session.business_id),
+      dbGetBlockedTimes(dateStr, session.business_id),
     ]);
 
     const byTime = new Map(appts.map((a) => [a.time, a]));

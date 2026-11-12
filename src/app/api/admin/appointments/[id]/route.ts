@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedBarberSession } from "@/lib/auth";
 import {
   dbDeleteAppointmentById,
   dbGetAppointmentById,
@@ -10,7 +10,8 @@ export async function DELETE(
   req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  if (!(await isAdminAuthenticated(req))) {
+  const session = await getAuthenticatedBarberSession(req);
+  if (!session) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
@@ -21,7 +22,7 @@ export async function DELETE(
   }
 
   try {
-    const row = await dbGetAppointmentById(apptId);
+    const row = await dbGetAppointmentById(apptId, session.business_id);
     if (!row) {
       return NextResponse.json(
         { error: "Marcação não encontrada." },
@@ -29,7 +30,7 @@ export async function DELETE(
       );
     }
 
-    await dbDeleteAppointmentById(apptId);
+    await dbDeleteAppointmentById(apptId, session.business_id);
 
     notifyCancelledBooking({
       name: row.name,

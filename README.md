@@ -11,7 +11,7 @@ KODE_BARBER/
 ├── src/
 │   ├── app/
 │   │   ├── page.tsx                        # Página inicial da plataforma
-│   │   ├── admin/page.tsx                  # Aviso de acesso da equipe em preparação
+│   │   ├── admin/page.tsx                  # Login do responsável e troca inicial de senha
 │   │   ├── platform/page.tsx               # Central Kode para administrar barbearias e planos (/platform)
 │   │   ├── layout.tsx                      # Layout raiz + suporte a tema claro/escuro
 │   │   ├── globals.css                     # Design tokens (Modern Barber Dark/Gold & Light)
@@ -21,12 +21,13 @@ KODE_BARBER/
 │   │       ├── availability/route.ts       # Horários disponíveis em tempo real
 │   │       ├── appointments/               # Agendamentos públicos e cancelamento desativado
 │   │       ├── my-appointments/            # Consulta pública desativada
-│   │       ├── admin/                      # Rotas autenticadas do barbeiro
-│   │       └── platform/                   # Login, barbearias e planos da plataforma
+│   │       ├── admin/                      # Login e rotas autenticadas por barbearia
+│   │       └── platform/                   # Login, barbearias, acessos e planos
 │   │           ├── login/route.ts
 │   │           ├── session/route.ts
 │   │           ├── businesses/route.ts
 │   │           ├── businesses/[id]/route.ts
+│   │           ├── businesses/[id]/admin/route.ts
 │   │           └── plans/route.ts
 │   ├── components/
 │   │   ├── BrandLogo.tsx                   # Identidade visual Kode Barber
@@ -35,7 +36,8 @@ KODE_BARBER/
 │   ├── config/
 │   │   └── business.ts                     # Serviços, preços, horários e regras de negócio
 │   └── lib/
-│       ├── auth.ts                         # Sessão HMAC-SHA256 + timing-safe + rate-limit
+│       ├── auth.ts                         # Sessões HMAC-SHA256 separadas e rate-limit
+│       ├── password-policy.ts              # Requisitos de senha dos administradores
 │       ├── domain.ts                       # Regras de fuso (America/Sao_Paulo), cutoff e datas
 │       ├── request-guard.ts                # Proteção anti-DoS (limite 16 KB) e anti-spam
 │       ├── supabase-server.ts              # Cliente REST Server-Only para o Supabase
@@ -69,20 +71,27 @@ KODE_BARBER/
 ## Configuração multiempresa
 
 1. Em um Supabase novo, aplique as migrações em ordem: primeiro
-   `supabase/migrations/202611120001_platform_foundation.sql`, depois
-   `supabase/migrations/202611120002_remove_ziah_business.sql`.
+   `supabase/migrations/202611120001_platform_foundation.sql`,
+   `supabase/migrations/202611120002_remove_ziah_business.sql` e
+   `supabase/migrations/202611120003_business_admin_access.sql`.
    A primeira cria as tabelas e um plano inicial sem barbearias de demonstração; a segunda
    também remove a barbearia de demonstração de ambientes em que a primeira migração já havia sido aplicada.
    A exclusão da empresa remove em cascata os dados vinculados a ela.
-2. Se a primeira migração já foi aplicada, execute somente
-   `supabase/migrations/202611120002_remove_ziah_business.sql` no SQL Editor do Supabase.
-3. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e um
-   `PLATFORM_SESSION_SECRET` aleatório com pelo menos 32 caracteres no `.env.local`.
+2. Se as migrações 001 e 002 já foram aplicadas, execute
+   `supabase/migrations/202611120003_business_admin_access.sql` no SQL Editor do Supabase
+   para habilitar o acesso dos administradores. A migração 002 só precisa ser executada
+   se ainda não tiver sido aplicada.
+3. Configure `PLATFORM_ADMIN_USER`, `PLATFORM_ADMIN_PASSWORD` e os segredos
+   `PLATFORM_SESSION_SECRET` e `BARBER_SESSION_SECRET`, cada um aleatório e com pelo menos
+   32 caracteres, no `.env.local`.
 4. Acesse `/platform` para cadastrar barbearias e configurar os planos.
+5. Na lista de barbearias, escolha **Configurar acesso**. Defina o nome, e-mail e senha
+   temporária do responsável; entregue a senha diretamente, pois ela não é enviada por
+   e-mail. No primeiro acesso em `/admin`, o responsável deverá criar uma nova senha.
 
-Esta etapa oferece a central da plataforma e o esquema isolado por `business_id`.
-O agendamento público por barbearia, o provisionamento dos acessos da equipe e os módulos
-operacionais ainda serão conectados em fases seguintes.
+Esta etapa oferece a central da plataforma, login individual, troca obrigatória da senha
+inicial e separação por `business_id` nas rotas administrativas. O agendamento público
+por barbearia e os módulos operacionais ainda serão conectados em fases seguintes.
 
 ---
 
@@ -102,8 +111,6 @@ npm run build
 3. Em **Environment Variables**, adicione as variáveis do `.env.local`:
    - `SUPABASE_URL`
    - `SUPABASE_SECRET_KEY`
-   - `BARBER_ADMIN_USER`
-   - `BARBER_ADMIN_PASSWORD`
    - `BARBER_SESSION_SECRET`
    - `PLATFORM_ADMIN_USER`
    - `PLATFORM_ADMIN_PASSWORD`

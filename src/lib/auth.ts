@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { NextRequest } from "next/server";
+import { dbGetBusinessAdminAccess } from "@/lib/supabase-server";
 
 export const ADMIN_COOKIE_NAME = "barber_admin_session";
 export const PLATFORM_ADMIN_COOKIE_NAME = "kode_platform_session";
@@ -13,36 +14,13 @@ const LOGIN_WINDOW_MS = 5 * 60 * 1000; // 5 minutos
 const loginAttempts = new Map<string, number[]>();
 
 function getSessionSecret(): string {
-  return (
-    process.env.BARBER_SESSION_SECRET ||
-    process.env.SUPABASE_SECRET_KEY ||
-    "fallback-dev-secret-change-in-production"
-  );
+  return process.env.BARBER_SESSION_SECRET || "";
 }
 
 function timingSafeEqualStr(a: string, b: string): boolean {
   const hashA = crypto.createHash("sha256").update(a, "utf8").digest();
   const hashB = crypto.createHash("sha256").update(b, "utf8").digest();
   return crypto.timingSafeEqual(hashA, hashB);
-}
-
-export function verifyAdminCredentials(
-  username: unknown,
-  password: unknown
-): boolean {
-  const givenUser = typeof username === "string" ? username.trim() : "";
-  const givenPass = typeof password === "string" ? password : "";
-
-  const expectedUser = (process.env.BARBER_ADMIN_USER || "admin").trim();
-  const expectedPass = process.env.BARBER_ADMIN_PASSWORD || "";
-
-  if (!expectedPass) {
-    return false;
-  }
-
-  const userOk = timingSafeEqualStr(givenUser, expectedUser);
-  const passOk = timingSafeEqualStr(givenPass, expectedPass);
-  return userOk && passOk;
 }
 
 export function verifyPlatformAdminCredentials(
@@ -61,11 +39,18 @@ export function verifyPlatformAdminCredentials(
   );
 }
 
-function createSignedToken(subject: string, secret: string): string {
+function createSignedToken(
+  subject: string,
+  secret: string,
+  claims: object = {}
+): string {
+  if (secret.length < 32) {
+    throw new Error("O segredo da sessão deve ter pelo menos 32 caracteres.");
+  }
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const nonce = crypto.randomBytes(16).toString("base64url");
   const payload = Buffer.from(
-    JSON.stringify({ sub: subject, exp, nonce }),
+    JSON.stringify({ sub: subject, exp, nonce, ...claims }),
     "utf8"
   ).toString("base64url");
 
@@ -77,8 +62,79 @@ function createSignedToken(subject: string, secret: string): string {
   return `${payload}.${sig}`;
 }
 
-export function createSignedSessionToken(): string {
-  return createSignedToken("admin", getSessionSecret());
+export interface BarberSession {
+  user_id: string;
+  business_id: string;
+  email: string;
+  must_change_password: boolean;
+}
+
+export async function getBarberSession(
+  req?: NextRequest
+): Promise<BarberSession | null> {
+  const secret = getSessionSecret();
+  if (secret.length < 32) return null;
+
+  let token: string | undefined;
+  try {
+    token = (await cookies()).get(ADMIN_COOKIE_NAME)?.value;
+  } catch {
+    // Route handlers can still provide their request cookies below.
+  }
+  if (!token && req) {
+    const authHeader = req.headers.get("authorization") || "";
+    token = authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : req.cookies.get(ADMIN_COOKIE_NAME)?.value;
+  }
+  if (!token) return null;
+
+  const claims = readSignedSessionToken(token, "barber-admin", secret);
+  if (
+    !claims ||
+    typeof claims.user_id !== "string" ||
+    typeof claims.business_id !== "string" ||
+    typeof claims.email !== "string" ||
+    typeof claims.must_change_password !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    user_id: claims.user_id,
+    business_id: claims.business_id,
+    email: claims.email,
+    must_change_password: claims.must_change_password,
+  };
+}
+
+export async function getAuthenticatedBarberSession(
+  req?: NextRequest,
+  allowPasswordChange = false
+): Promise<BarberSession | null> {
+  const session = await getBarberSession(req);
+  if (!session || (session.must_change_password && !allowPasswordChange)) {
+    return null;
+  }
+
+  const access = await dbGetBusinessAdminAccess(
+    session.business_id,
+    session.user_id
+  );
+  if (
+    !access ||
+    access.business_status === "suspended" ||
+    access.must_change_password !== session.must_change_password
+  ) {
+    return null;
+  }
+  return session;
+}
+
+export function createSignedBarberSessionToken(
+  session: BarberSession
+): string {
+  return createSignedToken("barber-admin", getSessionSecret(), session);
 }
 
 export function createSignedPlatformSessionToken(): string {
@@ -94,59 +150,42 @@ export function verifySignedSessionToken(
   expectedSubject = "admin",
   secret = getSessionSecret()
 ): boolean {
-  if (!token || !token.includes(".")) return false;
+  return readSignedSessionToken(token, expectedSubject, secret) !== null;
+}
+
+function readSignedSessionToken(
+  token: string | undefined | null,
+  expectedSubject: string,
+  secret: string
+): Record<string, unknown> | null {
+  if (secret.length < 32) return null;
+  if (!token || !token.includes(".")) return null;
   const [payload, sig] = token.split(".");
-  if (!payload || !sig) return false;
+  if (!payload || !sig) return null;
 
   const expectedSig = crypto
     .createHmac("sha256", secret)
     .update(payload)
     .digest("base64url");
 
-  if (!timingSafeEqualStr(sig, expectedSig)) return false;
+  if (!timingSafeEqualStr(sig, expectedSig)) return null;
 
   try {
     const decoded = JSON.parse(
       Buffer.from(payload, "base64url").toString("utf8")
     );
     if (decoded.sub !== expectedSubject || typeof decoded.exp !== "number") {
-      return false;
+      return null;
     }
     const nowSec = Math.floor(Date.now() / 1000);
-    return decoded.exp > nowSec;
+    return decoded.exp > nowSec ? decoded : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
 export async function isAdminAuthenticated(req?: NextRequest): Promise<boolean> {
-  // 1. Checa cookie HttpOnly
-  try {
-    const cookieStore = await cookies();
-    const cookieToken = cookieStore.get(ADMIN_COOKIE_NAME)?.value;
-    if (verifySignedSessionToken(cookieToken)) {
-      return true;
-    }
-  } catch {
-    // fallback para header
-  }
-
-  // 2. Fallback: Bearer token (compatibilidade com clientes de API/testes)
-  if (req) {
-    const authHeader = req.headers.get("authorization") || "";
-    if (authHeader.startsWith("Bearer ")) {
-      const bearer = authHeader.slice(7).trim();
-      if (verifySignedSessionToken(bearer)) {
-        return true;
-      }
-    }
-    const reqCookie = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
-    if (verifySignedSessionToken(reqCookie)) {
-      return true;
-    }
-  }
-
-  return false;
+  return Boolean(await getAuthenticatedBarberSession(req));
 }
 
 export async function isPlatformAdminAuthenticated(
